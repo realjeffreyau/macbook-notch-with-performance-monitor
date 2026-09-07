@@ -1,0 +1,153 @@
+import AppKit
+import DynamicNotchMedia
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var appState: AppState?
+    private var notchWindowController: NotchWindowController?
+    private var mediaCoordinator: MediaCoordinator?
+    private var outputDeviceService: (any MediaOutputDeviceService)?
+    private var captureActivityService: CaptureActivityService?
+    private var systemStatsService: SystemStatsService?
+    private var fileShelfService: FileShelfService?
+    private var settingsWindowController: SettingsWindowController?
+    private var menuBarController: MenuBarController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Accessory policy keeps the app out of the Dock; the dedicated
+        // status item below is the only intentional menu-bar surface.
+        NSApp.setActivationPolicy(.accessory)
+
+        let state = AppState()
+
+        // Media discovery remains provider-agnostic, while the selected
+        // session is projected into the notch state for the media surface.
+        // The generic provider remains the default. Spotify Apple Events are
+        // only constructed after an explicit launch switch, so normal startup
+        // does not ask for Automation permission or read another application.
+        let spotifyActivation = SpotifyActivationConfiguration.fromProcessArguments()
+        let packagedSpotifyActivation = spotifyActivation.appleEventsEnabled
+            && SpotifyActivationConfiguration.canRequestAppleEvents()
+
+        if spotifyActivation.appleEventsEnabled && !packagedSpotifyActivation {
+            // Keep a raw `swift run` executable from accidentally sending an
+            // Apple Event without a stable TCC identity and usage description.
+            // The explicit launch switch remains harmless until the caller
+            // follows the packaged-app steps in README.md.
+            fputs(
+                "Dynamic Notch: Spotify read requested, but this executable is not a packaged app with NSAppleEventsUsageDescription; Spotify remains disabled. See README.md.\n",
+                stderr
+            )
+        }
+        let mediaCoordinator = makeSystemMediaCoordinator(
+            spotifyAppleEventsEnabled: packagedSpotifyActivation,
+            spotifyCommandsEnabled: packagedSpotifyActivation && spotifyActivation.commandsEnabled
+        )
+        mediaCoordinator.onSessionUpdate = { @MainActor [weak state] session in
+            state?.updateMediaSession(session)
+        }
+
+        let outputDeviceService = CoreAudioOutputDeviceService()
+        outputDeviceService.onDeviceUpdate = { @MainActor [weak mediaCoordinator] outputDevice in
+            mediaCoordinator?.updateOutputDevice(outputDevice)
+        }
+
+        let captureActivityService = AVCaptureActivityService()
+        let systemStatsService = SystemStatsService()
+        systemStatsService.onUpdate = { @MainActor [weak state] snapshot in
+            state?.updateSystemStats(snapshot)
+        }
+
+        let fileShelfService = FileShelfService()
+        fileShelfService.onItemsChanged = { @MainActor [weak state] items in
+            state?.updateFileShelfItems(items)
+        }
+        fileShelfService.onDropStateChanged = { @MainActor [weak state] dropState in
+            state?.updateFileShelfDropState(dropState)
+        }
+        let controller = NotchWindowController(
+            state: state,
+            onMediaCommand: { @MainActor [weak mediaCoordinator] command in
+                mediaCoordinator?.send(command) ?? .failure(.notStarted)
+            },
+            onSystemStatsVisibilityChanged: { @MainActor [weak systemStatsService] isVisible in
+                if isVisible {
+                    systemStatsService?.start()
+                } else {
+                    systemStatsService?.stop()
+                }
+            },
+            fileShelfService: fileShelfService,
+            onOpenSettings: { @MainActor [weak self] in
+                self?.showSettings()
+            }
+        )
+        captureActivityService.onActivityUpdate = { @MainActor [weak state, weak controller] activity in
+            state?.updateCaptureActivity(activity)
+            controller?.refreshCaptureActivityLayout()
+        }
+        appState = state
+        notchWindowController = controller
+        self.mediaCoordinator = mediaCoordinator
+        self.outputDeviceService = outputDeviceService
+        self.captureActivityService = captureActivityService
+        self.systemStatsService = systemStatsService
+        self.fileShelfService = fileShelfService
+
+        controller.start()
+        outputDeviceService.start()
+        captureActivityService.start()
+        mediaCoordinator.start()
+
+        // Keep this recovery surface alive independently of panel visibility.
+        // In particular, disabling the notch from Settings leaves a native
+        // status item that can reopen Settings and re-enable it.
+        menuBarController = MenuBarController(
+            preferences: state.preferences,
+            onOpenOrExpandNotch: { @MainActor [weak controller] in
+                controller?.openOrExpandFromMenu()
+            },
+            onOpenSettings: { @MainActor [weak self] in
+                self?.showSettings()
+            },
+            onQuit: { @MainActor in
+                NSApp.terminate(nil)
+            }
+        )
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        systemStatsService?.stop()
+        systemStatsService = nil
+        fileShelfService?.stop()
+        fileShelfService = nil
+        captureActivityService?.stop()
+        captureActivityService = nil
+        outputDeviceService?.stop()
+        outputDeviceService = nil
+        mediaCoordinator?.stop()
+        mediaCoordinator = nil
+        notchWindowController?.stop()
+        notchWindowController = nil
+        menuBarController?.stop()
+        menuBarController = nil
+        settingsWindowController?.close()
+        settingsWindowController = nil
+        appState = nil
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    private func showSettings() {
+        guard let state = appState else { return }
+        if settingsWindowController == nil {
+            // Keep the hidden accessory path lightweight. SwiftUI's settings
+            // hierarchy is constructed only after the user explicitly asks
+            // for it from the expanded notch.
+            settingsWindowController = SettingsWindowController(preferences: state.preferences)
+        }
+        settingsWindowController?.showSettings()
+    }
+}
