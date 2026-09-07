@@ -1,4 +1,4 @@
-# Dynamic Notch
+# Dynamic Notch for MacOS
 
 Dynamic Notch is a native macOS utility that places a small interactive
 surface over the MacBook camera notch. It combines AppKit window management
