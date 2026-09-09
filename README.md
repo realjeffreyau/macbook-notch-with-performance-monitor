@@ -23,9 +23,15 @@ actions.
 
 ## Download
 
-The supported download is the source tree:
+For the quickest way to try the project, download the packaged macOS app:
 
-[Download the latest source ZIP](https://github.com/realjeffreyau/macbook-notch-with-performance-monitor/archive/refs/heads/main.zip)
+[Download Dynamic Notch for macOS](https://github.com/realjeffreyau/macbook-notch-with-performance-monitor/raw/refs/heads/main/downloads/DynamicNotch-macOS.app.zip)
+
+After the download finishes, double-click the archive to extract
+`DynamicNotch.app`, then open the app. Because this demo build is not
+notarized, macOS may require **Control-click → Open** on first launch.
+
+For the source tree:
 
 - Choose **Code → Download ZIP** on GitHub, or clone the repository:
 
@@ -40,9 +46,9 @@ The supported download is the source tree:
   swift build -c release
   ```
 
-There is no signed prebuilt application attached yet. A source build is
-required. A notched MacBook is needed for visual validation; on other displays,
-the utility can run without ordering a visible notch panel.
+The packaged app is ad-hoc signed and contains no third-party runtime
+dependencies. A notched MacBook is needed for visual validation; on other
+displays, the utility can run without ordering a visible notch panel.
 
 ## Requirements
 
