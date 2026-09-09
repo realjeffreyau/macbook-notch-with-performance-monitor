@@ -243,6 +243,7 @@ final class FileShelfService {
     private(set) var dropState: FileShelfDropState = .inactive
     var onItemsChanged: (@MainActor ([FileShelfItem]) -> Void)?
     var onDropStateChanged: (@MainActor (FileShelfDropState) -> Void)?
+    var onScreenshotDetected: (@MainActor () -> Void)?
 
     init(
         store: any FileShelfStoring = LocalFileShelfStore(),
@@ -434,7 +435,10 @@ final class FileShelfService {
               !items.contains(where: { Self.identity(for: $0.url) == Self.identity(for: url) })
         else { return }
 
-        _ = importLocalFileURLs([url])
+        let imported = importLocalFileURLs([url])
+        if !imported.isEmpty {
+            onScreenshotDetected?()
+        }
     }
 
     private func withSecurityScopedURL(

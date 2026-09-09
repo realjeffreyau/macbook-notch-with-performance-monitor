@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import DynamicNotchMedia
 import SwiftUI
 
@@ -16,6 +17,7 @@ final class NotchWindowController {
     private var hostingView: NSHostingView<NotchView>?
     private var presentationBeforeDrop: NotchPresentationState?
     private var fileDropDidComplete = false
+    private var lastClickAwayCollapseAt: Date?
 
     private var isStarted = false
 
@@ -99,6 +101,9 @@ final class NotchWindowController {
         preferences.onChange = { @MainActor [weak self] in
             self?.preferencesDidChange()
         }
+        fileShelfService.onScreenshotDetected = { @MainActor [weak self] in
+            self?.restoreExpandedPresentationAfterScreenshot()
+        }
         fileShelfService.setMaximumItemCount(preferences.fileShelfMaximumItems)
         if preferences.fileShelfEnabled {
             fileShelfService.start()
@@ -124,6 +129,7 @@ final class NotchWindowController {
     func stop() {
         guard isStarted else { return }
         preferences.onChange = nil
+        fileShelfService.onScreenshotDetected = nil
         finishFileShelfDrop(restoring: .collapsed)
         panel.interactionView.removeFileShelfDropDestination()
         removeEventMonitors()
@@ -134,6 +140,7 @@ final class NotchWindowController {
         state.collapse()
         state.updateGeometry(nil)
         onSystemStatsVisibilityChanged(false)
+        lastClickAwayCollapseAt = nil
         isStarted = false
     }
 
@@ -211,6 +218,8 @@ final class NotchWindowController {
     private func setPresentation(_ targetState: NotchPresentationState) {
         refreshReduceMotionPreference()
         guard preferences.isNotchEnabled, let geometry = state.geometry else { return }
+
+        lastClickAwayCollapseAt = nil
 
         if targetState == .expanded {
             installEventMonitors()
@@ -435,15 +444,19 @@ final class NotchWindowController {
 
         lifecycleTokens.globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseDownMask) {
             [weak self] event in
-            guard let self, !self.isInsideVisibleSurface(event) else { return }
-            self.setPresentation(.collapsed)
+            guard let self,
+                  !self.isScreenshotCaptureUIVisible(),
+                  !self.isInsideVisibleSurface(event)
+            else { return }
+            self.collapseFromClickAway()
         }
 
         lifecycleTokens.localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseDownMask) {
             [weak self] event in
             guard let self else { return event }
-            if !self.isInsideVisibleSurface(event) {
-                self.setPresentation(.collapsed)
+            if !self.isScreenshotCaptureUIVisible(),
+               !self.isInsideVisibleSurface(event) {
+                self.collapseFromClickAway()
             }
             return event
         }
@@ -463,6 +476,22 @@ final class NotchWindowController {
         lifecycleTokens.removeEventMonitors()
     }
 
+    private func collapseFromClickAway() {
+        guard state.presentationState == .expanded else { return }
+        setPresentation(.collapsed)
+        lastClickAwayCollapseAt = Date()
+    }
+
+    private func restoreExpandedPresentationAfterScreenshot() {
+        guard state.presentationState == .collapsed,
+              let lastClickAwayCollapseAt,
+              Date().timeIntervalSince(lastClickAwayCollapseAt) <= 5
+        else { return }
+
+        self.lastClickAwayCollapseAt = nil
+        setPresentation(.expanded)
+    }
+
     private func isInsideVisibleSurface(_ event: NSEvent) -> Bool {
         let screenPoint: NSPoint
         if let eventWindow = event.window {
@@ -478,6 +507,30 @@ final class NotchWindowController {
             y: screenPoint.y - panel.frame.minY
         )
         return panel.interactionView.isInsideVisibleSurface(panelPoint)
+    }
+
+    /// Cmd-Shift-4 is handled by Apple's separate Screenshot UI process. Its
+    /// selection overlay receives the user's drag outside this accessory panel,
+    /// but that interaction should not count as a click-away collapse. Window
+    /// inspection is performed only for an actual mouse event; it is not a
+    /// polling loop or a persistent monitor of the display server.
+    private func isScreenshotCaptureUIVisible() -> Bool {
+        guard let windowInfo = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        return windowInfo.contains { info in
+            let owner = (info[kCGWindowOwnerName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() ?? ""
+            let isOnscreen = (info[kCGWindowIsOnscreen as String] as? Bool) ?? false
+            guard isOnscreen else { return false }
+            return owner == "screenshot"
+                || owner.contains("screencapture")
+        }
     }
 }
 

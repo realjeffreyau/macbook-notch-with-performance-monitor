@@ -25,6 +25,8 @@ demo build is ad-hoc signed rather than notarized, so macOS may require
 - Automatic detection of standard macOS screenshots in the configured
   screenshot folder, with small thumbnails and an explicit copy-to-pasteboard
   action for pasting the image into another app.
+- Screenshot-safe click-away handling keeps the notch open during Cmd-Shift-4
+  selection and restores it after a transient collapse.
 - Native Settings and menu-bar recovery controls, including an opt-in startup
   preference that is off by default.
 - Reduced-motion support and no third-party runtime dependencies.
@@ -83,5 +85,5 @@ RUNBOOK.md                            Build and validation guide
 
 The automated suite does not replace hardware checks. Use the
 [runbook](RUNBOOK.md) to validate notch geometry, media behavior, screenshot
-discovery and copy, privacy indicators, File Shelf actions, Settings
-persistence, reduced motion, and menu-bar recovery.
+discovery and copy, screenshot-overlay behavior, privacy indicators, File Shelf
+actions, Settings persistence, reduced motion, and menu-bar recovery.

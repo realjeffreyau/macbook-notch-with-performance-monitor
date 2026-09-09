@@ -53,6 +53,12 @@ gets a bounded thumbnail and a copy button. Select the copy button to write the
 image to the macOS pasteboard, then paste it into another image-capable app
 with **Command-V**. The full image is read only for that explicit action.
 
+When the notch is expanded, press **Command-Shift-4** and select an area. The
+click-away handler ignores Apple's Screenshot selection overlay. If the overlay
+still causes a brief collapse, the detected screenshot restores the expanded
+presentation; ordinary clicks in another window continue to collapse the
+notch.
+
 Unsupported text and web-URL drags are ignored. Clearing the shelf removes its
 metadata only; it never deletes or moves the source files.
 
