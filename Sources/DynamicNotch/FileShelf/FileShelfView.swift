@@ -80,7 +80,6 @@ struct FileShelfPageView: View {
                 .scrollIndicators(.hidden)
             }
         }
-        .padding(.top, 11)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Recent local files")

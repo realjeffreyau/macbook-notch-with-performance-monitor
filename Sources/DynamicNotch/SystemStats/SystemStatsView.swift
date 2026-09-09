@@ -81,14 +81,13 @@ struct SystemStatsPageView: View {
                 progress: snapshot?.battery?.chargeFraction,
                 systemImage: batterySystemImage
             )
-
-            Text(snapshot == nil ? "Sampling while this page is visible" : "Live local snapshot")
-                .font(.system(size: 10, weight: .regular, design: .rounded))
-                .foregroundStyle(.white.opacity(0.44))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 2)
+            SystemStatsRow(
+                label: "Energy usage",
+                value: energyValue,
+                progress: snapshot?.energyUsageEstimate,
+                systemImage: "bolt"
+            )
         }
-        .padding(.top, 12)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("System statistics")
     }
@@ -123,6 +122,13 @@ struct SystemStatsPageView: View {
         case .discharging, .unknown: return "battery.50percent"
         case .full: return "battery.100percent"
         }
+    }
+
+    private var energyValue: String {
+        guard let estimate = snapshot?.energyUsageEstimate else {
+            return "Unavailable"
+        }
+        return percentage(estimate)
     }
 
     private func percentage(_ value: Double?) -> String {

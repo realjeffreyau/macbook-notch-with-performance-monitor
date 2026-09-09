@@ -63,6 +63,17 @@ struct SystemStatsSnapshot: Equatable, Sendable {
         }
         return min(max(Double(usedMemoryBytes) / Double(totalMemoryBytes), 0), 1)
     }
+
+    /// A bounded, relative energy-pressure estimate derived from the values
+    /// already sampled for the Performance page. macOS does not expose a
+    /// portable instantaneous energy percentage through the public APIs used
+    /// here, so this deliberately avoids extra processes, private APIs, or a
+    /// second sampling loop. It is a UI indicator, not a watt measurement.
+    var energyUsageEstimate: Double? {
+        guard let cpuUsage else { return nil }
+        let memoryPressure = memoryUsage ?? cpuUsage
+        return min(max((cpuUsage * 0.8) + (memoryPressure * 0.2), 0), 1)
+    }
 }
 
 @MainActor

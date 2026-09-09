@@ -121,12 +121,13 @@ final class NotchPanelContentView: NSView {
 /// A transparent, status-level panel dedicated to the physical notch region.
 final class NotchPanel: NSPanel {
     let interactionView: NotchPanelContentView
+    var resizeAnimationDuration = NotchDesignTokens.animationDuration
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     override func animationResizeTime(_ newFrame: NSRect) -> TimeInterval {
-        NotchDesignTokens.animationDuration
+        resizeAnimationDuration
     }
 
     init() {

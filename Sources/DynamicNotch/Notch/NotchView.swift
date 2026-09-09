@@ -9,12 +9,22 @@ enum NotchDesignTokens {
     // The media card owns metadata, progress, optional transport controls,
     // and the local output route. Leave enough vertical room for those
     // rows below the physical camera cutout without clipping the footer.
-    static let expandedHeight: CGFloat = 240
+    static let expandedHeight: CGFloat = 252
     static let expandedCornerRadius: CGFloat = 24
     static let collapsedCornerRadius: CGFloat = 8
     static let privacyIndicatorGutter: CGFloat = 14
     static let horizontalPadding: CGFloat = 24
+    // Keep one shared inset for every expanded page so switching tabs does not
+    // make the System or Files content jump relative to Media, while leaving
+    // a clear breathing gap below the page tabs.
+    static let expandedPageContentTopPadding: CGFloat = 12
+    static let expandedArtworkSize: CGFloat = 72
+    static let expandedContentBottomPadding: CGFloat = 12
+    static let expandedContentVerticalOffset: CGFloat = -4
     static let animationDuration: TimeInterval = 0.30
+    static let reducedMotionAnimationDuration: TimeInterval = 0.16
+    static let expandedTransitionScale: CGFloat = 0.96
+    static let reducedMotionTransitionScale: CGFloat = 0.995
 }
 
 /// The value the notch renders for one media observation. It deliberately
@@ -216,7 +226,12 @@ struct NotchView: View {
                     )
                     .transition(
                         .opacity.combined(
-                            with: .scale(scale: 0.96, anchor: .top)
+                            with: .scale(
+                                scale: state.reduceMotion
+                                    ? NotchDesignTokens.reducedMotionTransitionScale
+                                    : NotchDesignTokens.expandedTransitionScale,
+                                anchor: .top
+                            )
                         )
                     )
             }
@@ -416,42 +431,49 @@ private struct ExpandedNotchView: View {
                     .padding(.top, 6)
             }
 
-            switch expandedPage {
-            case .media:
-                if let session {
-                    // Progress is refreshed only while the expanded media
-                    // card is visible. The collapsed notch never owns a
-                    // progress timer.
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        ExpandedMediaContent(
-                            session: session,
-                            model: NotchMediaViewModel(session: session, at: context.date)
-                                .map { $0 },
-                            showArtwork: preferences.showArtwork,
-                            showOutputDevice: preferences.showOutputDevice,
-                            onMediaCommand: onMediaCommand
-                        )
-                        .id(session.id)
+            Group {
+                switch expandedPage {
+                case .media:
+                    if let session {
+                        // Progress is refreshed only while the expanded media
+                        // card is visible. The collapsed notch never owns a
+                        // progress timer.
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            ExpandedMediaContent(
+                                session: session,
+                                model: NotchMediaViewModel(session: session, at: context.date)
+                                    .map { $0 },
+                                showArtwork: preferences.showArtwork,
+                                showOutputDevice: preferences.showOutputDevice,
+                                onMediaCommand: onMediaCommand
+                            )
+                            .id(session.id)
+                        }
+                    } else {
+                        ExpandedNoMediaContent()
                     }
-                } else {
-                    ExpandedNoMediaContent()
+                case .system:
+                    SystemStatsPageView(snapshot: systemStats)
+                case .files:
+                    FileShelfPageView(
+                        items: fileShelfItems,
+                        onReveal: onFileShelfReveal,
+                        onQuickLook: onFileShelfQuickLook,
+                        onRemove: onFileShelfRemove,
+                        onClear: onFileShelfClear
+                    )
                 }
-            case .system:
-                SystemStatsPageView(snapshot: systemStats)
-            case .files:
-                FileShelfPageView(
-                    items: fileShelfItems,
-                    onReveal: onFileShelfReveal,
-                    onQuickLook: onFileShelfQuickLook,
-                    onRemove: onFileShelfRemove,
-                    onClear: onFileShelfClear
-                )
             }
-
-            Text("Click outside to collapse")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.44))
-                .padding(.bottom, 14)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .topLeading
+            )
+            .padding(.top, NotchDesignTokens.expandedPageContentTopPadding)
+            // The header above reserves the full physical notch height. Lift
+            // only the body by a few points; it remains below the cutout while
+            // the outer inset keeps the lower edge visually breathable.
+            .offset(y: NotchDesignTokens.expandedContentVerticalOffset)
 
             if preferences.showResourceDiagnostics {
                 Text("Event-driven · no idle polling")
@@ -461,6 +483,9 @@ private struct ExpandedNotchView: View {
                     .accessibilityLabel("Resource diagnostics: event-driven, no idle polling")
             }
         }
+        // This is outside the media page so system/files content gets the
+        // same lower edge clearance during the finite panel resize.
+        .padding(.bottom, NotchDesignTokens.expandedContentBottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, NotchDesignTokens.horizontalPadding)
         .background(
@@ -490,10 +515,10 @@ private struct ExpandedMediaContent: View {
     var body: some View {
         if let model {
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
+                HStack(spacing: 14) {
                     MediaArtworkView(
                         artwork: showArtwork ? model.artwork : nil,
-                        size: 58
+                        size: NotchDesignTokens.expandedArtworkSize
                     )
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -538,7 +563,9 @@ private struct ExpandedMediaContent: View {
 
                     Spacer(minLength: 0)
                 }
-                .padding(.top, 14)
+                // The page-level inset above is shared with System and Files;
+                // keeping this row's local inset at zero preserves one tab
+                // baseline while giving the larger art its intended room.
 
                 Spacer(minLength: 8)
 

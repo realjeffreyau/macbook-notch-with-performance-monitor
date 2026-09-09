@@ -1,18 +1,38 @@
 # Dynamic Notch runbook
 
-Run these commands from the repository root.
+Run commands from the repository root.
 
 ## Build and run
 
-Run the normal accessory without Spotify integration:
+Run the accessory without Spotify integration:
 
-``@@BT@sh
+```sh
 swift run DynamicNotch
-``@@BT@
+```
 
-For the optional Spotify read path, build and package the executable first:
+Run the isolated, read-only media diagnostic:
 
-``@@BT@sh
+```sh
+swift run DynamicNotchMediaDiagnostic
+```
+
+Its exit codes are:
+
+- `0` — session found
+- `1` — internal error
+- `2` — no session
+- `3` — provider unavailable
+- `4` — timeout
+
+The diagnostic reports bounded, redacted metadata and never sends a playback
+command.
+
+## Optional Spotify read path
+
+Package the executable before enabling Spotify. A raw SwiftPM executable is
+deliberately rejected for this path because it has no stable Automation identity.
+
+```sh
 swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
 bundle_dir="$PWD/.build/DynamicNotch.app"
@@ -22,43 +42,46 @@ cp Packaging/DynamicNotch-Info.plist "$bundle_dir/Contents/Info.plist"
 codesign --force --deep --sign - "$bundle_dir"
 codesign --verify --deep --strict "$bundle_dir"
 open "$bundle_dir" --args --enable-spotify-read
-``@@BT@
+```
 
-Approve `Dynamic Notch → Spotify` under System Settings → Privacy & Security
-→ Automation when macOS asks. Relaunch the same bundle after approval. Add
-`--enable-spotify-commands` only for a manual controls test:
+Approve the Automation request for Spotify in System Settings if macOS asks.
+Relaunch the same bundle after approval. Add
+`--enable-spotify-commands` only for an explicit manual controls test:
 
-``@@BT@sh
+```sh
 open "$PWD/.build/DynamicNotch.app" \
   --args --enable-spotify-read --enable-spotify-commands
-``@@BT@
+```
 
-The raw `swift run` executable deliberately rejects the Spotify switch because
-it has no stable application-bundle identity or Automation usage description.
-Spotify access is opt-in; it does not use OAuth, the Spotify Web API,
-or a network request.
+Spotify support is disabled by default. It does not use OAuth, the Spotify Web
+API, or a network request.
 
 ## Menu-bar and page checks
 
-The status-item menu remains available when the notch is disabled. Check:
+The status-item menu should remain available when the notch is disabled:
 
-- `Open / Expand Notch` opens the panel when enabled.
-- `Settings…` opens the native settings window.
-- The enable/disable item applies the preference immediately.
-- `Quit Dynamic Notch` stops the accessory process.
+- **Open / Expand Notch** opens the panel when enabled.
+- **Settings…** opens the native settings window.
+- **Enable / Disable Dynamic Notch** applies immediately.
+- **Quit Dynamic Notch** stops the accessory.
 
-In the expanded surface:
+When expanded, check:
 
-- Media shows the selected session, inferred progress, and only advertised
-  controls.
-- System shows native CPU, memory, and battery values while that page is
-  visible.
-- Files accepts Finder file drags and keeps only bounded URL/display metadata
-  plus a security-scoped bookmark when available.
-- Settings changes apply immediately and persist through relaunch.
+- **Media** shows the selected session, inferred progress, and only advertised
+  controls. Progress refreshes only while this page is visible.
+- **System** shows CPU, memory, battery, output device, and the bounded energy-use
+  estimate while the page is visible. The estimate is not a watt measurement.
+- **Files** accepts Finder file URLs and retains only bounded URL/display
+  metadata plus a security-scoped bookmark when available.
+- **Settings** applies preferences immediately and preserves them after relaunch.
 
-The File Shelf never copies, uploads, moves, or deletes the source file. Quick
-Look and Finder reveal are delegated to macOS after an explicit user action.
+The media, System, and Files pages share the same content inset. Switching pages
+should not visibly jump the card. The Reduce Motion preference should use a
+short finite transition without changing the panel's final geometry.
+
+File Shelf actions delegate Quick Look and Finder reveal to macOS after an
+explicit user action. Removing or clearing a row removes only its shelf
+metadata; it never deletes the source file.
 
 ## Privacy-indicator check
 
@@ -69,103 +92,87 @@ start a capture session.
 
 ## Resource check
 
-With the notch collapsed and the app running, use Activity Monitor or these
-advisory commands to inspect idle behavior:
+With the notch collapsed, use Activity Monitor or these advisory commands:
 
-``@@BT@sh
+```sh
 pid="$(pgrep -x DynamicNotch | head -1)"
 ps -p "$pid" -o pid=,etime=,%cpu=,%mem=,rss=,state=,command=
 vmmap -summary "$pid" | rg "Physical footprint|CoreAnimation|IOAccelerator"
-``@@BT@
+```
 
 The collapsed surface is event-driven. It has no polling timer, display link,
-network activity, or continuous animation driver. Media progress refreshes
-only while expanded; System samples only while visible.
+network activity, or continuous animation driver. System sampling stops when
+the System page is hidden.
 
 ## Verify the build
 
-``@@BT@sh
+```sh
 swift test
-swift test --filter Spotify
 swift build
 swift build -c release
-``@@BT@
+```
 
-The isolated generic-media diagnostic is bounded and redacts user media
-metadata:
+For the full visual check, use a notched MacBook display and validate:
 
-``@@BT@sh
-swift run DynamicNotchMediaDiagnostic
-``@@BT@
-
-Exit codes are `0` session found, `1` internal error, `2` no session, `3`
-provider unavailable, and `4` timeout. A no-session result from the private
-generic provider does not disprove the separate Spotify adapter. The
-diagnostic never sends a playback command.
+- notch alignment and resize behavior;
+- media transitions, progress, and transport controls;
+- external-display changes;
+- privacy indicators;
+- File Shelf drag-in, Quick Look, Finder reveal, drag-out, remove, and clear;
+- Settings persistence and Reduce Motion;
+- menu-bar enable/disable recovery;
+- fullscreen, Spaces, and teardown behavior.
 
 ## Restart and stop
 
-After source changes, replace the packaged executable before reopening it:
+Stop the exact executable before replacing a packaged build:
 
-``@@BT@sh
+```sh
 for pid in $(pgrep -x DynamicNotch 2>/dev/null); do
   kill "$pid"
 done
-swift build -c release
-bin_dir="$(swift build -c release --show-bin-path)"
-bundle_dir="$PWD/.build/DynamicNotch.app"
-mkdir -p "$bundle_dir/Contents/MacOS"
-cp "$bin_dir/DynamicNotch" "$bundle_dir/Contents/MacOS/DynamicNotch"
-cp Packaging/DynamicNotch-Info.plist "$bundle_dir/Contents/Info.plist"
-codesign --force --deep --sign - "$bundle_dir"
-codesign --verify --deep --strict "$bundle_dir"
-open "$bundle_dir" --args --enable-spotify-read
-``@@BT@
+```
 
-To stop only the exact executable:
+Then rebuild and repeat the packaging commands above. To confirm it is stopped:
 
-``@@BT@sh
-for pid in $(pgrep -x DynamicNotch 2>/dev/null); do
-  kill "$pid"
-done
-``@@BT@
+```sh
+pgrep -x DynamicNotch
+```
 
-No output from this check means the process is stopped:
-
-``@@BT@sh
-for pid in $(pgrep -x DynamicNotch 2>/dev/null); do
-  ps -p "$pid" -o pid=,etime=,command=
-done
-``@@BT@
+No output means the process is stopped.
 
 ## Troubleshooting
 
 ### No visible notch
 
-Use a notched MacBook display. The panel is not ordered on displays whose
-geometry does not expose a credible physical notch. If the notch was disabled
-in Settings, use the status-item menu to enable it again.
+The panel is ordered only on a display whose `NSScreen` geometry indicates a
+credible physical notch. Confirm the notched display is active and that
+Dynamic Notch is enabled in the status-item menu.
 
 ### The media card says `No media playing`
 
-For Spotify, confirm the app is playing, the packaged bundle was launched with
-`--enable-spotify-read`, Automation access is allowed, and the bundle was
-relaunched after permission was granted.
+For Spotify, confirm the packaged bundle was launched with
+`--enable-spotify-read`, Automation access is allowed, Spotify is playing, and
+the bundle was relaunched after permission was granted. The generic
+`MediaRemote.framework` provider is best-effort and may return no session on a
+given macOS release.
 
 ### A rebuilt app still shows old behavior
 
 Stop the running process, rebuild, replace the executable inside
-`.build/DynamicNotch.app`, and reopen the bundle. Opening an existing app bundle
-without copying the new executable runs the old build.
+`.build/DynamicNotch.app`, and reopen the bundle.
 
 ### A File Shelf drag is rejected
 
-Drag a file directly from Finder. Text, web URLs, and unsupported
-pasteboard providers are intentionally ignored. Stale or deleted file
-references should be removed and dragged in again.
+Drag a file directly from Finder. Unsupported pasteboard providers, text, and
+web URLs are intentionally ignored. Stale or deleted references should be
+removed and added again.
 
-### Private media diagnostic returns no session
+### Dynamic Notch was disabled
 
-The generic MediaRemote provider is a best-effort private-framework
-integration. It may be unavailable or return no session on a given macOS
-release. This result is not a failure of the Spotify adapter.
+Use the status-item menu to choose **Enable Dynamic Notch**. If the menu is not
+visible, use:
+
+```sh
+defaults write com.dynamicnotch.app notch.enabled -bool true
+```

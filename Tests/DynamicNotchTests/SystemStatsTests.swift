@@ -19,6 +19,7 @@ func systemSnapshotClampsAndDerivesValues() {
 
     #expect(snapshot.cpuUsage == 0)
     #expect(snapshot.memoryUsage == 0.75)
+    #expect(abs((snapshot.energyUsageEstimate ?? -1) - 0.15) < 0.0001)
     #expect(snapshot.battery?.chargeFraction == 1)
 }
 

@@ -214,9 +214,16 @@ final class NotchWindowController {
             removeEventMonitors()
         }
 
-        let animation: Animation? = state.reduceMotion
-            ? nil
-            : .easeInOut(duration: NotchDesignTokens.animationDuration)
+        // Keep one finite transition path for both motion preferences. Reduce
+        // Motion uses a short ease-out with almost no scale change instead of
+        // snapping the SwiftUI hierarchy while the panel is resizing.
+        let animation: Animation = state.reduceMotion
+            ? .easeOut(duration: NotchDesignTokens.reducedMotionAnimationDuration)
+            : .spring(
+                response: NotchDesignTokens.animationDuration,
+                dampingFraction: 0.86,
+                blendDuration: 0.06
+            )
         withAnimation(animation) {
             state.setPresentation(targetState)
         }
@@ -224,7 +231,7 @@ final class NotchWindowController {
         panel.interactionView.setInteractionState(interactionState(for: targetState))
         setPanelFrame(
             frame(for: targetState, geometry: geometry),
-            animated: !state.reduceMotion
+            animated: true
         )
         refreshSystemStatsVisibility()
     }
@@ -368,8 +375,11 @@ final class NotchWindowController {
     private func setPanelFrame(_ frame: NSRect, animated: Bool) {
         // NSWindow's explicit frame animation honors animationResizeTime(_:) on
         // the specialized panel, keeping the top-center anchor fixed while the
-        // window grows or collapses. Reduce Motion uses the documented immediate
-        // path instead of leaving an implicit animation active.
+        // window grows or collapses. Reduce Motion keeps the same finite path
+        // with a shorter duration, rather than leaving an implicit snap.
+        panel.resizeAnimationDuration = state.reduceMotion
+            ? NotchDesignTokens.reducedMotionAnimationDuration
+            : NotchDesignTokens.animationDuration
         panel.setFrame(frame, display: true, animate: animated)
     }
 

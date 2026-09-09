@@ -82,10 +82,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.contentView = hostingView
         window.isRestorable = false
-        window.center()
 
         super.init(window: window)
         window.delegate = self
+        positionWindow(window)
     }
 
     @available(*, unavailable)
@@ -100,5 +100,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func positionWindow(_ window: NSWindow) {
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        guard let screen else {
+            window.center()
+            return
+        }
+
+        let visibleFrame = screen.visibleFrame
+        let windowSize = window.frame.size
+        let centeredOriginY = visibleFrame.midY - windowSize.height / 2 - 24
+
+        // The expanded panel is anchored at the display's top edge. Keep the
+        // Settings window below that card with a small gap while still using
+        // the screen's visible frame for menu-bar/Dock safe placement.
+        let expandedCardBottom = screen.frame.maxY - NotchDesignTokens.expandedHeight
+        let belowNotchOriginY = expandedCardBottom - 16 - windowSize.height
+        let unclampedOriginY = min(centeredOriginY, belowNotchOriginY)
+        let originY = min(
+            max(unclampedOriginY, visibleFrame.minY),
+            visibleFrame.maxY - windowSize.height
+        )
+
+        window.setFrameOrigin(
+            NSPoint(
+                x: visibleFrame.midX - windowSize.width / 2,
+                y: originY
+            )
+        )
     }
 }
