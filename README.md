@@ -25,6 +25,8 @@ actions.
 
 The supported download is the source tree:
 
+[Download the latest source ZIP](https://github.com/realjeffreyau/macbook-notch-with-performance-monitor/archive/refs/heads/main.zip)
+
 - Choose **Code → Download ZIP** on GitHub, or clone the repository:
 
   ```sh
