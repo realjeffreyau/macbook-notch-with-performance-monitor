@@ -51,7 +51,7 @@ func eachTerminalEventIsAcceptedOnce() {
 @Test("summary redacts metadata and preserves stable presence schema")
 func summaryRedactsMetadata() {
     let session = MediaSession(
-        id: "secret-session-id",
+        id: "synthetic-session-id",
         title: "Private title",
         artistOrChannel: "Private artist",
         artwork: MediaArtwork(data: Data([1, 2, 3, 4]), mimeType: "image/png"),
@@ -91,7 +91,7 @@ func summaryRedactsMetadata() {
     #expect(rendered.contains("elapsed_within_duration=true"))
     #expect(rendered.contains("Private title") == false)
     #expect(rendered.contains("Private artist") == false)
-    #expect(rendered.contains("secret-session-id") == false)
+    #expect(rendered.contains("synthetic-session-id") == false)
     #expect(rendered.contains("1, 2, 3, 4") == false)
     #expect(rendered.contains("processIdentifier") == false)
     #expect(rendered.contains("displayName") == false)

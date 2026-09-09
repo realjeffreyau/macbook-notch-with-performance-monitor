@@ -2,6 +2,44 @@ import Foundation
 import Testing
 @testable import DynamicNotch
 
+@Test("screenshot detector recognizes standard macOS screenshot names")
+func screenshotDetectorRecognizesStandardNames() {
+    #expect(ScreenshotFileDetector.isScreenshotURL(
+        URL(fileURLWithPath: "/tmp/Screenshot 2026-09-08 at 11.42.03 PM.png")
+    ))
+    #expect(ScreenshotFileDetector.isScreenshotURL(
+        URL(fileURLWithPath: "/tmp/Screen Shot 2026-09-08 at 11.42.03 PM.jpg")
+    ))
+    #expect(ScreenshotFileDetector.isScreenshotURL(
+        URL(fileURLWithPath: "/tmp/screenshot 2026-09-08.heic")
+    ))
+    #expect(!ScreenshotFileDetector.isScreenshotURL(
+        URL(fileURLWithPath: "/tmp/meeting-notes.png")
+    ))
+    #expect(!ScreenshotFileDetector.isScreenshotURL(
+        URL(fileURLWithPath: "/tmp/Screenshot 2026-09-08.txt")
+    ))
+}
+
+@Test("latest screenshot scan ignores non-screenshot files")
+func latestScreenshotScanIgnoresNonScreenshotFiles() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("dynamic-notch-screenshot-scan-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let screenshot = directory.appendingPathComponent("Screenshot 2026-09-08 at 11.42.03 PM.png")
+    let note = directory.appendingPathComponent("meeting-notes.png")
+    try Data([0x89, 0x50, 0x4E, 0x47]).write(to: screenshot)
+    try Data([0x01]).write(to: note)
+
+    #expect(
+        ScreenshotFileDetector.latestScreenshot(in: directory)?
+            .resolvingSymlinksInPath()
+            == screenshot.resolvingSymlinksInPath()
+    )
+}
+
 @Test("file shelf accepts local URLs only and de-duplicates a drop")
 @MainActor
 func fileShelfAcceptsLocalURLsOnlyAndDeduplicates() {
@@ -174,7 +212,8 @@ func fileShelfCanRetryCancelledStartupLoadAfterReenable() async {
     let store = RestartableFileShelfStore(records: [record])
     let service = FileShelfService(
         store: store,
-        bookmarks: TestFileShelfBookmarks()
+        bookmarks: TestFileShelfBookmarks(),
+        screenshotMonitoringEnabled: false
     )
 
     service.start()
@@ -188,6 +227,8 @@ func fileShelfCanRetryCancelledStartupLoadAfterReenable() async {
 
     #expect(service.items.map(\.displayName) == ["reloaded.txt"])
     #expect(await store.loadCount >= 1)
+    service.stop()
+    try? await Task.sleep(for: .milliseconds(20))
 }
 
 private struct TestFileShelfBookmarks: FileShelfBookmarkProviding {

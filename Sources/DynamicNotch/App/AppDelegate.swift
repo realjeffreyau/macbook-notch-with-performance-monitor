@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var captureActivityService: CaptureActivityService?
     private var systemStatsService: SystemStatsService?
     private var fileShelfService: FileShelfService?
+    private var launchAtLoginService: LaunchAtLoginService?
     private var settingsWindowController: SettingsWindowController?
     private var menuBarController: MenuBarController?
 
@@ -19,6 +20,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         let state = AppState()
+        let launchAtLoginService = LaunchAtLoginService()
+        self.launchAtLoginService = launchAtLoginService
+        state.preferences.onStartAtLoginChange = { @MainActor enabled in
+            launchAtLoginService.apply(enabled: enabled)
+        }
+
+        // The default is false, so normal startup never registers a login
+        // item. A previously opted-in user is synchronized only because the
+        // persisted preference explicitly requests it.
+        if state.preferences.startAtLogin,
+           !launchAtLoginService.apply(enabled: true) {
+            state.preferences.startAtLogin = false
+        }
 
         // Media discovery remains provider-agnostic, while the selected
         // session is projected into the notch state for the media surface.
@@ -80,6 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fileShelfService: fileShelfService,
             onOpenSettings: { @MainActor [weak self] in
                 self?.showSettings()
+            },
+            onFileShelfCopy: { @MainActor [weak fileShelfService] item in
+                fileShelfService?.copyToPasteboard(item) ?? false
             }
         )
         captureActivityService.onActivityUpdate = { @MainActor [weak state, weak controller] activity in
@@ -131,6 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notchWindowController = nil
         menuBarController?.stop()
         menuBarController = nil
+        appState?.preferences.onStartAtLoginChange = nil
+        launchAtLoginService = nil
         settingsWindowController?.close()
         settingsWindowController = nil
         appState = nil

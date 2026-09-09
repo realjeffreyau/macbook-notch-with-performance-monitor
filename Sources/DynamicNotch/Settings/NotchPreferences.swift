@@ -36,11 +36,13 @@ final class NotchPreferences {
         static let fileShelfEnabled = "notch.fileShelfEnabled"
         static let fileShelfMaximumItems = "notch.fileShelfMaximumItems"
         static let showResourceDiagnostics = "notch.showResourceDiagnostics"
+        static let startAtLogin = "notch.startAtLogin"
     }
 
     static let defaultFileShelfMaximumItems = 8
 
     private let defaults: UserDefaults
+    private var isRollingBackStartAtLogin = false
 
     var isNotchEnabled: Bool {
         didSet {
@@ -117,10 +119,35 @@ final class NotchPreferences {
         }
     }
 
+    /// Opt-in only. The app owner applies the native registration after this
+    /// value changes and rejects the change if macOS cannot register it.
+    var startAtLogin: Bool {
+        didSet {
+            if isRollingBackStartAtLogin {
+                return
+            }
+            guard startAtLogin != oldValue else { return }
+            if let onStartAtLoginChange,
+               !onStartAtLoginChange(startAtLogin) {
+                isRollingBackStartAtLogin = true
+                startAtLogin = oldValue
+                isRollingBackStartAtLogin = false
+                return
+            }
+            defaults.set(startAtLogin, forKey: Key.startAtLogin)
+            notifyChange()
+        }
+    }
+
     /// Called by the owner of the notch controller after a persisted value
     /// changes. It is intentionally not persisted and is weakly captured by
     /// the controller, so closing Settings cannot affect notch presentation.
     var onChange: (@MainActor () -> Void)?
+
+    /// Returns false when the native login-item registration could not be
+    /// applied. It is separate from `onChange` so the notch controller does
+    /// not need to own startup registration.
+    var onStartAtLoginChange: (@MainActor (Bool) -> Bool)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -145,6 +172,7 @@ final class NotchPreferences {
         showResourceDiagnostics = defaults.object(
             forKey: Key.showResourceDiagnostics
         ) as? Bool ?? false
+        startAtLogin = defaults.object(forKey: Key.startAtLogin) as? Bool ?? false
     }
 
     func shouldReduceMotion(systemValue: Bool) -> Bool {

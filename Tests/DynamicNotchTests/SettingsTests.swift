@@ -21,6 +21,7 @@ func settingsUseSafeDefaultsAndPersistRoundTrip() {
     #expect(initial.fileShelfEnabled)
     #expect(initial.fileShelfMaximumItems == FileShelfLimits.maximumItemCount)
     #expect(!initial.showResourceDiagnostics)
+    #expect(!initial.startAtLogin)
 
     initial.isNotchEnabled = false
     initial.motionPreference = .reduceMotion
@@ -31,6 +32,7 @@ func settingsUseSafeDefaultsAndPersistRoundTrip() {
     initial.fileShelfEnabled = false
     initial.fileShelfMaximumItems = 3
     initial.showResourceDiagnostics = true
+    initial.startAtLogin = true
 
     let reloaded = NotchPreferences(defaults: defaults)
     #expect(!reloaded.isNotchEnabled)
@@ -42,6 +44,28 @@ func settingsUseSafeDefaultsAndPersistRoundTrip() {
     #expect(!reloaded.fileShelfEnabled)
     #expect(reloaded.fileShelfMaximumItems == 3)
     #expect(reloaded.showResourceDiagnostics)
+    #expect(reloaded.startAtLogin)
+}
+
+@Test("startup preference reverts when registration is rejected")
+@MainActor
+func startupPreferenceRevertsWhenRegistrationIsRejected() {
+    let suiteName = "DynamicNotchSettingsTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let preferences = NotchPreferences(defaults: defaults)
+    var requestedValue: Bool?
+    preferences.onStartAtLoginChange = { enabled in
+        requestedValue = enabled
+        return false
+    }
+
+    preferences.startAtLogin = true
+
+    #expect(requestedValue == true)
+    #expect(!preferences.startAtLogin)
+    #expect(defaults.object(forKey: NotchPreferences.Key.startAtLogin) == nil)
 }
 
 @Test("settings clamp the File Shelf bound and notify synchronously")

@@ -49,8 +49,9 @@ struct NotchSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Deferred") {
-                Text("Launch at login is intentionally not included in this phase.")
+            Section("Startup") {
+                Toggle("Start Dynamic Notch at startup", isOn: $preferences.startAtLogin)
+                Text("Off by default. Enabling this registers Dynamic Notch as a macOS login item.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

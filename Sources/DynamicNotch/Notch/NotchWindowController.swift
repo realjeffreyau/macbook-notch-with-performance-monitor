@@ -11,6 +11,7 @@ final class NotchWindowController {
     private let onMediaCommand: @MainActor (MediaCommand) -> Result<Void, MediaProviderError>
     private let onSystemStatsVisibilityChanged: @MainActor (Bool) -> Void
     private let onOpenSettings: @MainActor () -> Void
+    private let onFileShelfCopy: @MainActor (FileShelfItem) -> Bool
     private let fileShelfService: FileShelfService
     private var hostingView: NSHostingView<NotchView>?
     private var presentationBeforeDrop: NotchPresentationState?
@@ -25,7 +26,8 @@ final class NotchWindowController {
         },
         onSystemStatsVisibilityChanged: @escaping @MainActor (Bool) -> Void = { _ in },
         fileShelfService: FileShelfService,
-        onOpenSettings: @escaping @MainActor () -> Void = {}
+        onOpenSettings: @escaping @MainActor () -> Void = {},
+        onFileShelfCopy: @escaping @MainActor (FileShelfItem) -> Bool = { _ in false }
     ) {
         self.state = state
         preferences = state.preferences
@@ -33,6 +35,7 @@ final class NotchWindowController {
         self.onMediaCommand = onMediaCommand
         self.onSystemStatsVisibilityChanged = onSystemStatsVisibilityChanged
         self.onOpenSettings = onOpenSettings
+        self.onFileShelfCopy = onFileShelfCopy
         self.fileShelfService = fileShelfService
     }
 
@@ -60,6 +63,9 @@ final class NotchWindowController {
             },
             onFileShelfQuickLook: { [weak self] item in
                 self?.fileShelfService.quickLook(item)
+            },
+            onFileShelfCopy: { [weak self] item in
+                self?.onFileShelfCopy(item) ?? false
             },
             onFileShelfRemove: { [weak self] id in
                 _ = self?.fileShelfService.remove(id: id)

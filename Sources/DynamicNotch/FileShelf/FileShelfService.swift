@@ -47,6 +47,10 @@ struct FileShelfItem: Identifiable, Equatable, Sendable {
             bookmarkData: bookmarkData
         )
     }
+
+    var isScreenshot: Bool {
+        ScreenshotFileDetector.isScreenshotURL(url)
+    }
 }
 
 /// Codable metadata persisted by the local shelf store. This intentionally
@@ -219,17 +223,19 @@ struct SecurityScopedFileShelfBookmarks: FileShelfBookmarkProviding {
     }
 }
 
-/// Main-actor coordinator for local file references. It has no timer or
-/// polling lifecycle: loading is one bounded startup task and writes happen
-/// only after explicit user actions.
+/// Main-actor coordinator for local file references. Loading is one bounded
+/// startup task; screenshot discovery is an event-driven Desktop watch and
+/// writes happen only after an explicit user action or a new screenshot event.
 @MainActor
 final class FileShelfService {
     static let maximumItemCount = FileShelfLimits.maximumItemCount
 
     private let store: any FileShelfStoring
     private let bookmarks: any FileShelfBookmarkProviding
+    private let screenshotMonitoringEnabled: Bool
     private var loadTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
+    private var screenshotWatcher: ScreenshotFileWatcher?
     private var didStart = false
     private var didMutateBeforeLoad = false
 
@@ -241,10 +247,12 @@ final class FileShelfService {
     init(
         store: any FileShelfStoring = LocalFileShelfStore(),
         bookmarks: any FileShelfBookmarkProviding = SecurityScopedFileShelfBookmarks(),
-        maximumItemCount: Int = FileShelfService.maximumItemCount
+        maximumItemCount: Int = FileShelfService.maximumItemCount,
+        screenshotMonitoringEnabled: Bool = true
     ) {
         self.store = store
         self.bookmarks = bookmarks
+        self.screenshotMonitoringEnabled = screenshotMonitoringEnabled
         self.maximumItemCount = min(
             max(1, maximumItemCount),
             FileShelfService.maximumItemCount
@@ -283,6 +291,7 @@ final class FileShelfService {
                 // Missing or corrupt metadata should not affect notch startup.
             }
             self.loadTask = nil
+            self.startScreenshotMonitoring()
         }
     }
 
@@ -293,6 +302,8 @@ final class FileShelfService {
         // alive. Allow the next enable transition to retry a load that was
         // cancelled before it completed.
         didStart = false
+        screenshotWatcher?.stop()
+        screenshotWatcher = nil
         // Do not cancel an explicit save already queued by a user action. The
         // actor store is finite and may finish while NSApplication tears down.
         setDropState(.inactive)
@@ -385,7 +396,46 @@ final class FileShelfService {
         quickLookController.present(url: url)
     }
 
+    @discardableResult
+    func copyToPasteboard(_ item: FileShelfItem) -> Bool {
+        var didCopy = false
+        withSecurityScopedURL(for: item) { url in
+            guard ScreenshotFileDetector.isScreenshotURL(url),
+                  let image = NSImage(contentsOf: url)
+            else { return }
+
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            didCopy = pasteboard.writeObjects([image])
+        }
+        return didCopy
+    }
+
     private lazy var quickLookController = FileShelfQuickLookController()
+
+    private func startScreenshotMonitoring() {
+        guard screenshotMonitoringEnabled,
+              didStart,
+              screenshotWatcher == nil
+        else { return }
+
+        let watcher = ScreenshotFileWatcher()
+        watcher.onChange = { @MainActor [weak self] in
+            self?.importLatestScreenshotIfNeeded()
+        }
+        screenshotWatcher = watcher
+        watcher.start()
+        importLatestScreenshotIfNeeded()
+    }
+
+    private func importLatestScreenshotIfNeeded() {
+        guard didStart,
+              let url = ScreenshotFileDetector.latestScreenshot(),
+              !items.contains(where: { Self.identity(for: $0.url) == Self.identity(for: url) })
+        else { return }
+
+        _ = importLocalFileURLs([url])
+    }
 
     private func withSecurityScopedURL(
         for item: FileShelfItem,

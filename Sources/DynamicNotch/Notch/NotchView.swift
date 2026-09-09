@@ -186,6 +186,7 @@ struct NotchView: View {
     let onMediaCommand: @MainActor (MediaCommand) -> Result<Void, MediaProviderError>
     let onFileShelfReveal: (FileShelfItem) -> Void
     let onFileShelfQuickLook: (FileShelfItem) -> Void
+    let onFileShelfCopy: (FileShelfItem) -> Bool
     let onFileShelfRemove: (UUID) -> Void
     let onFileShelfClear: () -> Void
 
@@ -221,6 +222,7 @@ struct NotchView: View {
                         onMediaCommand: onMediaCommand,
                         onFileShelfReveal: onFileShelfReveal,
                         onFileShelfQuickLook: onFileShelfQuickLook,
+                        onFileShelfCopy: onFileShelfCopy,
                         onFileShelfRemove: onFileShelfRemove,
                         onFileShelfClear: onFileShelfClear
                     )
@@ -402,6 +404,7 @@ private struct ExpandedNotchView: View {
     let onMediaCommand: @MainActor (MediaCommand) -> Result<Void, MediaProviderError>
     let onFileShelfReveal: (FileShelfItem) -> Void
     let onFileShelfQuickLook: (FileShelfItem) -> Void
+    let onFileShelfCopy: (FileShelfItem) -> Bool
     let onFileShelfRemove: (UUID) -> Void
     let onFileShelfClear: () -> Void
 
@@ -459,6 +462,7 @@ private struct ExpandedNotchView: View {
                         items: fileShelfItems,
                         onReveal: onFileShelfReveal,
                         onQuickLook: onFileShelfQuickLook,
+                        onCopy: onFileShelfCopy,
                         onRemove: onFileShelfRemove,
                         onClear: onFileShelfClear
                     )

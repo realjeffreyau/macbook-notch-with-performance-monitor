@@ -31,6 +31,7 @@ struct FileShelfPageView: View {
     let items: [FileShelfItem]
     let onReveal: (FileShelfItem) -> Void
     let onQuickLook: (FileShelfItem) -> Void
+    let onCopy: (FileShelfItem) -> Bool
     let onRemove: (UUID) -> Void
     let onClear: () -> Void
 
@@ -71,6 +72,7 @@ struct FileShelfPageView: View {
                                 item: item,
                                 onReveal: { onReveal(item) },
                                 onQuickLook: { onQuickLook(item) },
+                                onCopy: { onCopy(item) },
                                 onRemove: { onRemove(item.id) }
                             )
                         }
@@ -94,7 +96,7 @@ private struct FileShelfEmptyState: View {
                 .font(.system(size: 22, weight: .medium))
                 .foregroundStyle(.white.opacity(0.62))
                 .accessibilityHidden(true)
-            Text("Drop a file on the notch to save it here")
+            Text("Screenshots from Cmd-Shift-4 and dropped files appear here")
                 .font(.system(size: 12, weight: .regular, design: .rounded))
                 .foregroundStyle(.white.opacity(0.58))
                 .multilineTextAlignment(.center)
@@ -105,16 +107,29 @@ private struct FileShelfEmptyState: View {
 }
 
 private struct FileShelfRow: View {
+    private enum ScreenshotCopyState: Equatable {
+        case idle
+        case copying
+        case copied
+    }
+
     let item: FileShelfItem
     let onReveal: () -> Void
     let onQuickLook: () -> Void
+    let onCopy: () -> Bool
     let onRemove: () -> Void
     @State private var icon: NSImage?
+    @State private var thumbnail: NSImage?
+    @State private var copyState: ScreenshotCopyState = .idle
 
     var body: some View {
         HStack(spacing: 8) {
             Group {
-                if let icon {
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                } else if let icon {
                     Image(nsImage: icon)
                         .resizable()
                 } else {
@@ -123,7 +138,8 @@ private struct FileShelfRow: View {
                         .foregroundStyle(.white.opacity(0.54))
                 }
             }
-            .frame(width: 22, height: 22)
+            .frame(width: item.isScreenshot ? 32 : 22, height: item.isScreenshot ? 32 : 22)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -138,6 +154,9 @@ private struct FileShelfRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            if item.isScreenshot {
+                screenshotCopyAction()
+            }
             fileAction(systemName: "eye", label: "Quick Look", action: onQuickLook)
             fileAction(systemName: "arrow.up.forward.app", label: "Reveal in Finder", action: onReveal)
             fileAction(systemName: "xmark", label: "Remove", action: onRemove)
@@ -154,12 +173,25 @@ private struct FileShelfRow: View {
             // Workspace icon lookup is one bounded, lifecycle-scoped read and
             // stays out of `body`, which may be recomputed frequently.
             icon = NSWorkspace.shared.icon(forFile: item.url.path)
+            thumbnail = item.isScreenshot
+                ? ScreenshotThumbnailLoader.image(for: item.url)
+                : nil
+        }
+        .task(id: copyState) {
+            guard copyState == .copied else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            copyState = .idle
         }
         // Keep the row's name while exposing Quick Look, Finder, and Remove
         // as separate native accessibility actions.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(item.displayName)
-        .accessibilityHint("Drag to another app, or use Quick Look and Reveal in Finder actions")
+        .accessibilityHint(
+            item.isScreenshot
+                ? "Copy the screenshot, drag to another app, or use Quick Look and Reveal in Finder actions"
+                : "Drag to another app, or use Quick Look and Reveal in Finder actions"
+        )
     }
 
     private func fileAction(
@@ -176,5 +208,50 @@ private struct FileShelfRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+
+    private func screenshotCopyAction() -> some View {
+        Button(action: copyScreenshot) {
+            Group {
+                switch copyState {
+                case .idle:
+                    Image(systemName: "doc.on.doc")
+                case .copying:
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white.opacity(0.72))
+                        .scaleEffect(0.55)
+                case .copied:
+                    Image(systemName: "checkmark")
+                }
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.white.opacity(0.72))
+            .frame(width: 23, height: 23)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(copyState == .copying)
+        .accessibilityLabel(copyAccessibilityLabel)
+    }
+
+    private var copyAccessibilityLabel: String {
+        switch copyState {
+        case .idle: "Copy screenshot"
+        case .copying: "Copying screenshot"
+        case .copied: "Screenshot copied"
+        }
+    }
+
+    private func copyScreenshot() {
+        guard copyState == .idle else { return }
+        copyState = .copying
+        Task { @MainActor in
+            // Give SwiftUI one turn to render the native progress indicator
+            // before decoding the screenshot and writing the pasteboard item.
+            await Task.yield()
+            guard copyState == .copying else { return }
+            copyState = onCopy() ? .copied : .idle
+        }
     }
 }
