@@ -3,9 +3,14 @@ import SwiftUI
 
 struct NotchSettingsView: View {
     @Bindable private var preferences: NotchPreferences
+    private let onRefreshAndRestart: @MainActor () -> Void
 
-    init(preferences: NotchPreferences) {
+    init(
+        preferences: NotchPreferences,
+        onRefreshAndRestart: @escaping @MainActor () -> Void = {}
+    ) {
         _preferences = Bindable(wrappedValue: preferences)
+        self.onRefreshAndRestart = onRefreshAndRestart
     }
 
     var body: some View {
@@ -55,6 +60,18 @@ struct NotchSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Recovery") {
+                Button {
+                    onRefreshAndRestart()
+                } label: {
+                    Label("Refresh & restart app", systemImage: "arrow.clockwise")
+                }
+
+                Text("Relaunches Dynamic Notch with fresh media, screenshot, and system observers. Preferences, saved file references, and screenshots are kept.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 390)
@@ -68,13 +85,19 @@ struct NotchSettingsView: View {
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let preferences: NotchPreferences
 
-    init(preferences: NotchPreferences) {
+    init(
+        preferences: NotchPreferences,
+        onRefreshAndRestart: @escaping @MainActor () -> Void = {}
+    ) {
         self.preferences = preferences
 
-        let contentView = NotchSettingsView(preferences: preferences)
+        let contentView = NotchSettingsView(
+            preferences: preferences,
+            onRefreshAndRestart: onRefreshAndRestart
+        )
         let hostingView = NSHostingView(rootView: contentView)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 430, height: 540),
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false

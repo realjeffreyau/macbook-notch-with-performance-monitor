@@ -1,6 +1,36 @@
 import AppKit
 import DynamicNotchMedia
 
+/// Bridges NSWorkspace's concurrent launch completion back to the main actor
+/// without capturing the AppDelegate in a background callback. The relay is
+/// short-lived and is retained by the completion closure until the launch
+/// either succeeds or fails.
+private final class RestartCompletionRelay: @unchecked Sendable {
+    private let handler: @MainActor (String?) -> Void
+
+    init(handler: @escaping @MainActor (String?) -> Void) {
+        self.handler = handler
+    }
+
+    func complete(errorMessage: String?) {
+        let handler = self.handler
+        Task { @MainActor in
+            handler(errorMessage)
+        }
+    }
+}
+
+/// NSWorkspace invokes its completion handler on a concurrent Launch Services
+/// queue. Build that closure outside the AppDelegate's MainActor context so it
+/// can safely forward only a Sendable error message through the relay.
+private func makeRestartCompletionHandler(
+    relay: RestartCompletionRelay
+) -> @Sendable (NSRunningApplication?, Error?) -> Void {
+    { _, error in
+        relay.complete(errorMessage: error?.localizedDescription)
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appState: AppState?
@@ -13,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchAtLoginService: LaunchAtLoginService?
     private var settingsWindowController: SettingsWindowController?
     private var menuBarController: MenuBarController?
+    private var isRestarting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Accessory policy keeps the app out of the Dock; the dedicated
@@ -165,8 +196,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Keep the hidden accessory path lightweight. SwiftUI's settings
             // hierarchy is constructed only after the user explicitly asks
             // for it from the expanded notch.
-            settingsWindowController = SettingsWindowController(preferences: state.preferences)
+            settingsWindowController = SettingsWindowController(
+                preferences: state.preferences,
+                onRefreshAndRestart: { @MainActor [weak self] in
+                    self?.refreshAndRestart()
+                }
+            )
         }
         settingsWindowController?.showSettings()
+    }
+
+    private func refreshAndRestart() {
+        guard !isRestarting else { return }
+
+        let bundleURL = Bundle.main.bundleURL
+        guard bundleURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame else {
+            presentRestartFailure(
+                "Refresh & restart is available when Dynamic Notch is launched from its packaged .app bundle."
+            )
+            return
+        }
+
+        isRestarting = true
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        configuration.createsNewApplicationInstance = true
+        configuration.arguments = Array(ProcessInfo.processInfo.arguments.dropFirst())
+
+        let relay = RestartCompletionRelay { @MainActor [weak self] errorMessage in
+            guard let self else { return }
+            if let errorMessage {
+                self.isRestarting = false
+                self.presentRestartFailure(errorMessage)
+                return
+            }
+
+            self.settingsWindowController?.close()
+            self.settingsWindowController = nil
+            NSApp.terminate(nil)
+        }
+        NSWorkspace.shared.openApplication(
+            at: bundleURL,
+            configuration: configuration,
+            completionHandler: makeRestartCompletionHandler(relay: relay)
+        )
+    }
+
+    private func presentRestartFailure(_ message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Couldn’t restart Dynamic Notch"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }

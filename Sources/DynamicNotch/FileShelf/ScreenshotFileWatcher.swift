@@ -104,10 +104,49 @@ enum ScreenshotThumbnailLoader {
 /// Event-driven watcher for macOS's configured screenshot directory. It never
 /// polls; macOS wakes the source when the directory changes, and the shelf
 /// performs one bounded directory scan.
+///
+/// Dispatch source handlers run on a utility queue. Keep the MainActor
+/// callback behind a Sendable relay so the utility-queue closure never
+/// captures or touches the MainActor-isolated watcher directly. Capturing the
+/// watcher in that closure can trigger Swift's executor precondition before
+/// the intended task hop, which terminates the app with SIGTRAP.
+private final class ScreenshotFileChangeRelay: @unchecked Sendable {
+    private let handler: @MainActor () -> Void
+
+    init(handler: @escaping @MainActor () -> Void) {
+        self.handler = handler
+    }
+
+    func signal() {
+        let handler = self.handler
+        Task { @MainActor in
+            handler()
+        }
+    }
+}
+
+/// Builds the dispatch-source callback outside the MainActor context. A
+/// closure literal created inside `ScreenshotFileWatcher.start()` can inherit
+/// MainActor isolation even when it only calls a Sendable relay; libdispatch
+/// then correctly runs it on the utility queue, where Swift traps on that
+/// mismatched executor. Keeping the factory nonisolated avoids that inference.
+private func makeScreenshotFileEventHandler(
+    relay: ScreenshotFileChangeRelay
+) -> @Sendable () -> Void {
+    { relay.signal() }
+}
+
+private func makeScreenshotFileCancelHandler(
+    descriptor: Int32
+) -> @Sendable () -> Void {
+    { close(descriptor) }
+}
+
 @MainActor
 final class ScreenshotFileWatcher {
     private let directoryURL: URL
     private var source: DispatchSourceFileSystemObject?
+    private var changeRelay: ScreenshotFileChangeRelay?
 
     var onChange: (@MainActor () -> Void)?
 
@@ -127,14 +166,12 @@ final class ScreenshotFileWatcher {
             eventMask: [.write, .extend, .attrib, .rename],
             queue: DispatchQueue.global(qos: .utility)
         )
-        source.setEventHandler { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.onChange?()
-            }
+        let relay = ScreenshotFileChangeRelay { [weak self] in
+            self?.onChange?()
         }
-        source.setCancelHandler {
-            close(descriptor)
-        }
+        changeRelay = relay
+        source.setEventHandler(handler: makeScreenshotFileEventHandler(relay: relay))
+        source.setCancelHandler(handler: makeScreenshotFileCancelHandler(descriptor: descriptor))
         self.source = source
         source.resume()
     }
@@ -142,6 +179,7 @@ final class ScreenshotFileWatcher {
     func stop() {
         source?.cancel()
         source = nil
+        changeRelay = nil
         onChange = nil
     }
 

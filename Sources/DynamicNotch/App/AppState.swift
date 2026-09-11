@@ -31,8 +31,7 @@ final class AppState {
     func updateGeometry(_ geometry: NotchGeometry?) {
         self.geometry = geometry
         if geometry == nil {
-            presentationState = .collapsed
-            fileShelfDropState = .inactive
+            collapse()
         }
     }
 
@@ -61,11 +60,19 @@ final class AppState {
     }
 
     func togglePresentation() {
-        presentationState = presentationState == .collapsed ? .expanded : .collapsed
+        if presentationState == .collapsed {
+            presentationState = .expanded
+        } else {
+            collapse()
+        }
     }
 
     func setPresentation(_ presentationState: NotchPresentationState) {
-        self.presentationState = presentationState
+        if presentationState == .collapsed {
+            collapse()
+        } else {
+            self.presentationState = presentationState
+        }
     }
 
     func setExpandedPage(_ page: NotchExpandedPage) {

@@ -40,6 +40,32 @@ func latestScreenshotScanIgnoresNonScreenshotFiles() throws {
     )
 }
 
+@Test("screenshot watcher relays filesystem events without an executor trap")
+@MainActor
+func screenshotWatcherRelaysFilesystemEvents() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("dynamic-notch-screenshot-watcher-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let watcher = ScreenshotFileWatcher(directoryURL: directory)
+    var callbackCount = 0
+    watcher.onChange = {
+        callbackCount += 1
+    }
+    watcher.start()
+
+    let probe = directory.appendingPathComponent("watcher-probe.txt")
+    try Data([0x01]).write(to: probe)
+
+    for _ in 0..<40 where callbackCount == 0 {
+        try await Task.sleep(for: .milliseconds(25))
+    }
+
+    watcher.stop()
+    #expect(callbackCount > 0)
+}
+
 @Test("file shelf accepts local URLs only and de-duplicates a drop")
 @MainActor
 func fileShelfAcceptsLocalURLsOnlyAndDeduplicates() {
@@ -160,6 +186,19 @@ func appStateCarriesFilesPageAndResetsItOnCollapse() {
 
     #expect(state.expandedPage == .media)
     #expect(state.fileShelfDropState == .inactive)
+}
+
+@Test("any collapsed presentation returns to the Media page")
+@MainActor
+func anyCollapsedPresentationReturnsToMediaPage() {
+    let state = AppState()
+
+    state.setExpandedPage(.system)
+    state.setPresentation(.expanded)
+    state.setPresentation(.collapsed)
+
+    #expect(state.presentationState == .collapsed)
+    #expect(state.expandedPage == .media)
 }
 
 @Test("file shelf metadata store bounds oversized reads and writes")

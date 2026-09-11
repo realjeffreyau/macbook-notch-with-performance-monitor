@@ -57,7 +57,8 @@ When the notch is expanded, press **Command-Shift-4** and select an area. The
 click-away handler ignores Apple's Screenshot selection overlay. If the overlay
 still causes a brief collapse, the detected screenshot restores the expanded
 presentation; ordinary clicks in another window continue to collapse the
-notch.
+notch. The filesystem watcher delivers background events through safe relays,
+so taking a screenshot should not terminate the app.
 
 Unsupported text and web-URL drags are ignored. Clearing the shelf removes its
 metadata only; it never deletes or moves the source files.
@@ -73,6 +74,12 @@ locally, including:
 - the bounded File Shelf item count;
 - optional resource diagnostics; and
 - the explicit startup preference, which is off by default.
+
+Under **Recovery**, **Refresh & restart app** relaunches the packaged app with
+its current launch arguments and resets transient observers and in-memory
+artwork state. Preferences, File Shelf references, screenshot items, and the
+media artwork cache are preserved. The action reports an error when the app is
+running as a raw executable instead of a packaged application.
 
 The menu-bar item remains available for opening the notch, opening Settings,
 enabling or disabling the notch, and quitting. It is also the recovery path

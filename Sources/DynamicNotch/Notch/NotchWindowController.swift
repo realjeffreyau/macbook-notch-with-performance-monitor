@@ -277,7 +277,7 @@ final class NotchWindowController {
                 height: geometry.notchRect.height
             )
         case .expanded, .dropTarget:
-            let width = max(NotchDesignTokens.expandedWidth, geometry.notchRect.width + 160)
+            let width = NotchDesignTokens.expandedSurfaceWidth(for: geometry.notchRect.width)
             let height = NotchDesignTokens.expandedHeight
             return NSRect(
                 x: geometry.topCenterAnchor.x - width / 2,

@@ -20,6 +20,8 @@ final class NotchPanelContentView: NSView {
         self.hostedView = hostedView
         hostedView.translatesAutoresizingMaskIntoConstraints = true
         hostedView.autoresizingMask = [.width, .height]
+        hostedView.wantsLayer = true
+        hostedView.layer?.masksToBounds = true
         addSubview(hostedView)
         hostedView.frame = bounds
     }
@@ -140,6 +142,8 @@ final class NotchPanel: NSPanel {
         )
 
         contentView = interactionView
+        interactionView.wantsLayer = true
+        interactionView.layer?.masksToBounds = true
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

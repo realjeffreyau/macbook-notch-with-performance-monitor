@@ -6,6 +6,11 @@ enum NotchDesignTokens {
     // Give the media title enough horizontal room while keeping the panel
     // compact around the physical notch.
     static let expandedWidth: CGFloat = 430
+
+    static func expandedSurfaceWidth(for notchWidth: CGFloat) -> CGFloat {
+        max(expandedWidth, notchWidth + 160)
+    }
+
     // The media card owns metadata, progress, optional transport controls,
     // and the local output route. Leave enough vertical room for those
     // rows below the physical camera cutout without clipping the footer.
@@ -14,17 +19,28 @@ enum NotchDesignTokens {
     static let collapsedCornerRadius: CGFloat = 8
     static let privacyIndicatorGutter: CGFloat = 14
     static let horizontalPadding: CGFloat = 24
+
+    static func expandedContentWidth(for surfaceWidth: CGFloat) -> CGFloat {
+        max(1, surfaceWidth - 2 * horizontalPadding)
+    }
+
     // Keep one shared inset for every expanded page so switching tabs does not
     // make the System or Files content jump relative to Media, while leaving
     // a clear breathing gap below the page tabs.
     static let expandedPageContentTopPadding: CGFloat = 12
-    static let expandedArtworkSize: CGFloat = 72
+    // Use more of the existing media card without changing the panel frame.
+    // The metadata and controls still fit beside/below this larger square.
+    static let expandedArtworkSize: CGFloat = 96
     static let expandedContentBottomPadding: CGFloat = 12
     static let expandedContentVerticalOffset: CGFloat = -4
     static let animationDuration: TimeInterval = 0.30
     static let reducedMotionAnimationDuration: TimeInterval = 0.16
     static let expandedTransitionScale: CGFloat = 0.96
     static let reducedMotionTransitionScale: CGFloat = 0.995
+
+    static func expandedHandleTopPadding(for notchHeight: CGFloat) -> CGFloat {
+        max(12, notchHeight + 8)
+    }
 }
 
 /// The value the notch renders for one media observation. It deliberately
@@ -209,22 +225,78 @@ struct NotchView: View {
             case .dropTarget:
                 FileShelfDropTargetView()
             case .expanded:
-                    ExpandedNotchView(
-                        session: state.mediaSession,
-                        notchHeight: state.geometry?.notchRect.height ?? 0,
-                        captureActivity: state.captureActivity,
-                        expandedPage: state.expandedPage,
-                        systemStats: state.systemStats,
-                        fileShelfItems: state.fileShelfItems,
-                        preferences: preferences,
-                        onExpandedPageChange: onExpandedPageChange,
-                        onOpenSettings: onOpenSettings,
-                        onMediaCommand: onMediaCommand,
-                        onFileShelfReveal: onFileShelfReveal,
-                        onFileShelfQuickLook: onFileShelfQuickLook,
-                        onFileShelfCopy: onFileShelfCopy,
-                        onFileShelfRemove: onFileShelfRemove,
-                        onFileShelfClear: onFileShelfClear
+                    ZStack(alignment: .top) {
+                        // Keep the visible black surface owned by one fixed
+                        // canvas. Media's TimelineView must never be able to
+                        // make the card appear larger than Files or System.
+                        RoundedRectangle(
+                            cornerRadius: NotchDesignTokens.expandedCornerRadius,
+                            style: .continuous
+                        )
+                        .fill(Color.black)
+
+                        ExpandedNotchView(
+                            session: state.mediaSession,
+                            surfaceWidth: NotchDesignTokens.expandedSurfaceWidth(
+                                for: state.geometry?.notchRect.width ?? 0
+                            ),
+                            notchHeight: state.geometry?.notchRect.height ?? 0,
+                            captureActivity: state.captureActivity,
+                            expandedPage: state.expandedPage,
+                            systemStats: state.systemStats,
+                            fileShelfItems: state.fileShelfItems,
+                            preferences: preferences,
+                            onExpandedPageChange: onExpandedPageChange,
+                            onOpenSettings: onOpenSettings,
+                            onMediaCommand: onMediaCommand,
+                            onFileShelfReveal: onFileShelfReveal,
+                            onFileShelfQuickLook: onFileShelfQuickLook,
+                            onFileShelfCopy: onFileShelfCopy,
+                            onFileShelfRemove: onFileShelfRemove,
+                            onFileShelfClear: onFileShelfClear
+                        )
+                        .frame(
+                            width: NotchDesignTokens.expandedSurfaceWidth(
+                                for: state.geometry?.notchRect.width ?? 0
+                            ),
+                            height: NotchDesignTokens.expandedHeight
+                        )
+                        .clipped()
+
+                        // Keep the page picker and handle outside the page
+                        // content hierarchy. A long Music title or artwork
+                        // can no longer shift either control by even a point.
+                        ExpandedNotchHeader(
+                            surfaceWidth: NotchDesignTokens.expandedSurfaceWidth(
+                                for: state.geometry?.notchRect.width ?? 0
+                            ),
+                            notchHeight: state.geometry?.notchRect.height ?? 0,
+                            selection: state.expandedPage,
+                            pages: NotchExpandedPage.available(
+                                systemStatsEnabled: preferences.systemStatsEnabled,
+                                fileShelfEnabled: preferences.fileShelfEnabled
+                            ),
+                            onSettings: onOpenSettings,
+                            onSelect: onExpandedPageChange
+                        )
+                    }
+                    .frame(
+                        width: NotchDesignTokens.expandedSurfaceWidth(
+                            for: state.geometry?.notchRect.width ?? 0
+                        ),
+                        height: NotchDesignTokens.expandedHeight
+                    )
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: NotchDesignTokens.expandedCornerRadius,
+                            style: .continuous
+                        )
+                    )
+                    .contentShape(
+                        RoundedRectangle(
+                            cornerRadius: NotchDesignTokens.expandedCornerRadius,
+                            style: .continuous
+                        )
                     )
                     .transition(
                         .opacity.combined(
@@ -391,8 +463,44 @@ private struct PrivacyIndicatorDot: View {
     }
 }
 
+private struct ExpandedNotchHeader: View {
+    let surfaceWidth: CGFloat
+    let notchHeight: CGFloat
+    let selection: NotchExpandedPage
+    let pages: [NotchExpandedPage]
+    let onSettings: () -> Void
+    let onSelect: (NotchExpandedPage) -> Void
+
+    private var contentWidth: CGFloat {
+        NotchDesignTokens.expandedContentWidth(for: surfaceWidth)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(.white.opacity(0.28))
+                .frame(width: 34, height: 4)
+                .padding(
+                    .top,
+                    NotchDesignTokens.expandedHandleTopPadding(for: notchHeight)
+                )
+
+            ExpandedPagePicker(
+                selection: selection,
+                pages: pages,
+                onSettings: onSettings,
+                onSelect: onSelect
+            )
+            .frame(width: contentWidth, alignment: .center)
+            .padding(.top, 8)
+        }
+        .frame(width: contentWidth, alignment: .top)
+    }
+}
+
 private struct ExpandedNotchView: View {
     let session: MediaSession?
+    let surfaceWidth: CGFloat
     let notchHeight: CGFloat
     let captureActivity: CaptureActivity
     let expandedPage: NotchExpandedPage
@@ -408,29 +516,25 @@ private struct ExpandedNotchView: View {
     let onFileShelfRemove: (UUID) -> Void
     let onFileShelfClear: () -> Void
 
+    private var contentWidth: CGFloat {
+        NotchDesignTokens.expandedContentWidth(for: surfaceWidth)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            Capsule()
-                .fill(.white.opacity(0.28))
-                .frame(width: 34, height: 4)
-                // The panel's top edge is the display's top edge. Keep the
-                // media row below the physical camera cutout instead of
-                // allowing the hardware black region to cover its title.
-                .padding(.top, max(12, notchHeight + 8))
-
-            ExpandedPagePicker(
-                selection: expandedPage,
-                pages: NotchExpandedPage.available(
-                    systemStatsEnabled: preferences.systemStatsEnabled,
-                    fileShelfEnabled: preferences.fileShelfEnabled
-                ),
-                onSettings: onOpenSettings,
-                onSelect: onExpandedPageChange
-            )
-            .padding(.top, 8)
+            // Reserve the same header height on every page. The handle and
+            // picker are rendered by ExpandedNotchHeader above the page stack
+            // so page content cannot affect their alignment.
+            Color.clear
+                .frame(
+                    height: NotchDesignTokens.expandedHandleTopPadding(
+                        for: notchHeight
+                    ) + 4 + 8 + 22
+                )
 
             if preferences.showPrivacyIndicators && captureActivity.isActive {
                 PrivacyIndicatorRow(activity: captureActivity)
+                    .frame(width: contentWidth)
                     .padding(.top, 6)
             }
 
@@ -452,6 +556,12 @@ private struct ExpandedNotchView: View {
                             )
                             .id(session.id)
                         }
+                        // Keep the timeline page on the same fixed canvas as
+                        // Files and System; its intrinsic content must not
+                        // change the visible card bounds.
+                        .frame(width: contentWidth, alignment: .topLeading)
+                        .frame(maxHeight: .infinity, alignment: .topLeading)
+                        .clipped()
                     } else {
                         ExpandedNoMediaContent()
                     }
@@ -468,11 +578,8 @@ private struct ExpandedNotchView: View {
                     )
                 }
             }
-            .frame(
-                maxWidth: .infinity,
-                maxHeight: .infinity,
-                alignment: .topLeading
-            )
+            .frame(width: contentWidth, alignment: .topLeading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, NotchDesignTokens.expandedPageContentTopPadding)
             // The header above reserves the full physical notch height. Lift
             // only the body by a few points; it remains below the cutout while
@@ -490,21 +597,9 @@ private struct ExpandedNotchView: View {
         // This is outside the media page so system/files content gets the
         // same lower edge clearance during the finite panel resize.
         .padding(.bottom, NotchDesignTokens.expandedContentBottomPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: contentWidth, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, NotchDesignTokens.horizontalPadding)
-        .background(
-            RoundedRectangle(
-                cornerRadius: NotchDesignTokens.expandedCornerRadius,
-                style: .continuous
-            )
-            .fill(Color.black)
-        )
-        .contentShape(
-            RoundedRectangle(
-                cornerRadius: NotchDesignTokens.expandedCornerRadius,
-                style: .continuous
-            )
-        )
     }
 }
 
@@ -571,7 +666,7 @@ private struct ExpandedMediaContent: View {
                 // keeping this row's local inset at zero preserves one tab
                 // baseline while giving the larger art its intended room.
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 4)
 
                 if let duration = session.duration, duration > 0 {
                     let availability = MediaControlAvailability(session: session)
@@ -594,6 +689,7 @@ private struct ExpandedMediaContent: View {
                             }
                         )
                         .tint(.white)
+                        .padding(.top, 4)
                         .accessibilityLabel("Playback progress")
                         .accessibilityValue("\(Int((elapsed / duration) * 100)) percent")
                     } else if let progress = model.progress {
@@ -602,6 +698,7 @@ private struct ExpandedMediaContent: View {
                         // renders it dimmed, which makes passive progress
                         // look unavailable rather than simply read-only.
                         MediaProgressBar(progress: progress)
+                            .padding(.top, 4)
                     }
                     HStack {
                         Text(formatTime(elapsed))
