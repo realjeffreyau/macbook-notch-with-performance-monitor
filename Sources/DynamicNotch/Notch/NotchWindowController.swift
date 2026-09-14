@@ -229,15 +229,17 @@ final class NotchWindowController {
             removeEventMonitors()
         }
 
-        // Keep one finite transition path for both motion preferences. Reduce
-        // Motion uses a short ease-out with almost no scale change instead of
-        // snapping the SwiftUI hierarchy while the panel is resizing.
+        // Keep the content transition on the same finite ease-out curve as the
+        // panel resize. A spring here can outlive the AppKit window animation,
+        // which makes click-away collapse look like two unsynchronized moves.
         let animation: Animation = state.reduceMotion
             ? .easeOut(duration: NotchDesignTokens.reducedMotionAnimationDuration)
-            : .spring(
-                response: NotchDesignTokens.animationDuration,
-                dampingFraction: 0.86,
-                blendDuration: 0.06
+            : .timingCurve(
+                0.22,
+                1.0,
+                0.36,
+                1.0,
+                duration: NotchDesignTokens.animationDuration
             )
         withAnimation(animation) {
             state.setPresentation(targetState)
@@ -388,14 +390,26 @@ final class NotchWindowController {
     }
 
     private func setPanelFrame(_ frame: NSRect, animated: Bool) {
-        // NSWindow's explicit frame animation honors animationResizeTime(_:) on
-        // the specialized panel, keeping the top-center anchor fixed while the
-        // window grows or collapses. Reduce Motion keeps the same finite path
-        // with a shorter duration, rather than leaving an implicit snap.
+        // Keep the top-center anchor fixed while the window grows or collapses.
+        // Explicitly share the content curve so the AppKit frame and SwiftUI
+        // transition settle together instead of producing a choppy close.
         panel.resizeAnimationDuration = state.reduceMotion
             ? NotchDesignTokens.reducedMotionAnimationDuration
             : NotchDesignTokens.animationDuration
-        panel.setFrame(frame, display: true, animate: animated)
+
+        guard animated else {
+            panel.setFrame(frame, display: true, animate: false)
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = panel.resizeAnimationDuration
+            context.timingFunction = state.reduceMotion
+                ? CAMediaTimingFunction(name: .easeOut)
+                : CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
+            context.allowsImplicitAnimation = true
+            panel.animator().setFrame(frame, display: true)
+        }
     }
 
     private func refreshReduceMotionPreference() {

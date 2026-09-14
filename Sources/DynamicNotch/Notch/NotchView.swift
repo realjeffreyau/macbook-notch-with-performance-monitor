@@ -35,7 +35,10 @@ enum NotchDesignTokens {
     static let expandedContentVerticalOffset: CGFloat = -4
     static let animationDuration: TimeInterval = 0.30
     static let reducedMotionAnimationDuration: TimeInterval = 0.16
-    static let expandedTransitionScale: CGFloat = 0.96
+    // The panel is already shrinking toward the physical notch. Keep the
+    // content scale contribution subtle so the two animations read as one
+    // continuous movement instead of two competing contractions.
+    static let expandedTransitionScale: CGFloat = 0.985
     static let reducedMotionTransitionScale: CGFloat = 0.995
 
     static func expandedHandleTopPadding(for notchHeight: CGFloat) -> CGFloat {
