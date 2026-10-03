@@ -37,9 +37,18 @@ final class NotchPreferences {
         static let fileShelfMaximumItems = "notch.fileShelfMaximumItems"
         static let showResourceDiagnostics = "notch.showResourceDiagnostics"
         static let startAtLogin = "notch.startAtLogin"
+        static let keepAwakeDurationPreset = "keepAwake.durationPreset"
+        static let keepAwakeKeepsDisplayAwake = "keepAwake.keepsDisplayAwake"
+        static let keepAwakeClosedLidEnabled = "keepAwake.closedLidEnabled"
+        static let keepAwakeClosedLidAllowsBattery = "keepAwake.closedLidAllowsBattery"
+        static let keepAwakeLowBatteryThreshold = "keepAwake.lowBatteryThreshold"
+        static let keepAwakeLowPowerWithClosedLid = "keepAwake.lowPowerWithClosedLid"
     }
 
     static let defaultFileShelfMaximumItems = 8
+    static let defaultKeepAwakeLowBatteryThreshold = 20
+    /// Offered low-battery thresholds; 0 means never stop for battery.
+    static let keepAwakeLowBatteryThresholds = [0, 10, 20, 30, 50]
 
     private let defaults: UserDefaults
     private var isRollingBackStartAtLogin = false
@@ -139,6 +148,77 @@ final class NotchPreferences {
         }
     }
 
+    // Keep Awake configuration. Only configuration persists; an active
+    // session never resumes after relaunch.
+
+    var keepAwakeDurationPreset: KeepAwakeDurationPreset {
+        didSet {
+            defaults.set(keepAwakeDurationPreset.rawValue, forKey: Key.keepAwakeDurationPreset)
+        }
+    }
+
+    /// Runtime status is observable but never persisted as proof of activation.
+    var keepAwakeEnergyModeStatus = "Low Power Mode follows the closed-lid switch when this option is enabled."
+    var energyHelperStatus = "Enable the energy helper once to avoid repeated password prompts."
+    var onEnableEnergyHelper: (@MainActor () -> Void)?
+    var onDisableEnergyHelper: (@MainActor () -> Void)?
+    var onRefreshEnergyHelper: (@MainActor () -> Void)?
+
+    var keepAwakeLowPowerWithClosedLid: Bool {
+        didSet {
+            defaults.set(keepAwakeLowPowerWithClosedLid, forKey: Key.keepAwakeLowPowerWithClosedLid)
+            notifyKeepAwakeChange()
+        }
+    }
+
+    var keepAwakeKeepsDisplayAwake: Bool {
+        didSet {
+            defaults.set(keepAwakeKeepsDisplayAwake, forKey: Key.keepAwakeKeepsDisplayAwake)
+            notifyKeepAwakeChange()
+        }
+    }
+
+    /// Explicit opt-in; off by default.
+    var keepAwakeClosedLidEnabled: Bool {
+        didSet {
+            defaults.set(keepAwakeClosedLidEnabled, forKey: Key.keepAwakeClosedLidEnabled)
+            notifyKeepAwakeChange()
+        }
+    }
+
+    /// Separate deliberate opt-in; closed-lid mode is AC-only without it.
+    var keepAwakeClosedLidAllowsBattery: Bool {
+        didSet {
+            defaults.set(keepAwakeClosedLidAllowsBattery, forKey: Key.keepAwakeClosedLidAllowsBattery)
+            notifyKeepAwakeChange()
+        }
+    }
+
+    /// Percent; 0 turns the low-battery stop off.
+    var keepAwakeLowBatteryThreshold: Int {
+        didSet {
+            let boundedValue = Self.clampKeepAwakeLowBatteryThreshold(keepAwakeLowBatteryThreshold)
+            if keepAwakeLowBatteryThreshold != boundedValue {
+                keepAwakeLowBatteryThreshold = boundedValue
+                return
+            }
+            defaults.set(keepAwakeLowBatteryThreshold, forKey: Key.keepAwakeLowBatteryThreshold)
+            notifyKeepAwakeChange()
+        }
+    }
+
+    var keepAwakeOptions: KeepAwakeOptions {
+        KeepAwakeOptions(
+            keepsDisplayAwake: keepAwakeKeepsDisplayAwake,
+            closedLidRequested: keepAwakeClosedLidEnabled,
+            closedLidAllowedOnBattery: keepAwakeClosedLidAllowsBattery,
+            lowBatteryThreshold: keepAwakeLowBatteryThreshold > 0 ? keepAwakeLowBatteryThreshold : nil
+        )
+    }
+
+    /// Lets a running Keep Awake session apply option changes immediately.
+    var onKeepAwakeOptionsChange: (@MainActor (KeepAwakeOptions) -> Void)?
+
     /// Called by the owner of the notch controller after a persisted value
     /// changes. It is intentionally not persisted and is weakly captured by
     /// the controller, so closing Settings cannot affect notch presentation.
@@ -173,6 +253,20 @@ final class NotchPreferences {
             forKey: Key.showResourceDiagnostics
         ) as? Bool ?? false
         startAtLogin = defaults.object(forKey: Key.startAtLogin) as? Bool ?? false
+
+        keepAwakeDurationPreset = KeepAwakeDurationPreset(
+            rawValue: defaults.string(forKey: Key.keepAwakeDurationPreset) ?? ""
+        ) ?? .indefinitely
+        keepAwakeKeepsDisplayAwake = defaults.object(forKey: Key.keepAwakeKeepsDisplayAwake) as? Bool ?? false
+        keepAwakeLowPowerWithClosedLid = defaults.bool(forKey: Key.keepAwakeLowPowerWithClosedLid)
+        keepAwakeClosedLidEnabled = defaults.object(forKey: Key.keepAwakeClosedLidEnabled) as? Bool ?? false
+        keepAwakeClosedLidAllowsBattery = defaults.object(
+            forKey: Key.keepAwakeClosedLidAllowsBattery
+        ) as? Bool ?? false
+        keepAwakeLowBatteryThreshold = Self.clampKeepAwakeLowBatteryThreshold(
+            defaults.object(forKey: Key.keepAwakeLowBatteryThreshold) as? Int
+                ?? Self.defaultKeepAwakeLowBatteryThreshold
+        )
     }
 
     func shouldReduceMotion(systemValue: Bool) -> Bool {
@@ -187,7 +281,17 @@ final class NotchPreferences {
         min(max(value, 1), FileShelfLimits.maximumItemCount)
     }
 
+    static func clampKeepAwakeLowBatteryThreshold(_ value: Int) -> Int {
+        min(max(value, 0), 95)
+    }
+
     private func notifyChange() {
         onChange?()
+    }
+
+    /// Keep Awake values do not affect notch layout, so they skip `onChange`
+    /// and its geometry refresh; SwiftUI observes them directly.
+    private func notifyKeepAwakeChange() {
+        onKeepAwakeOptionsChange?(keepAwakeOptions)
     }
 }

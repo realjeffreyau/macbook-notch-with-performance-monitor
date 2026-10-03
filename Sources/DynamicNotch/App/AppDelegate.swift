@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchAtLoginService: LaunchAtLoginService?
     private var settingsWindowController: SettingsWindowController?
     private var menuBarController: MenuBarController?
+    private var keepAwakeController: KeepAwakeController?
+    private var lowPowerModeService: LowPowerModeService?
+    private var terminationSignalSource: (any DispatchSourceSignal)?
     private var isRestarting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -103,6 +106,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state?.updateSystemStats(snapshot)
         }
 
+        // Keep Awake starts inactive on every launch; only its configuration
+        // persists. Recovery first undoes a closed-lid override that a crash
+        // may have left in the kernel.
+        let keepAwakeController = KeepAwakeController(
+            assertions: IOKitPowerAssertionBackend(),
+            closedLid: IOKitClosedLidBackend(),
+            powerSource: IOKitPowerSourceMonitor(),
+            systemEvents: WorkspaceKeepAwakeSystemEvents(),
+            scheduler: DispatchKeepAwakeScheduler()
+        )
+        keepAwakeController.recoverAfterUnexpectedExit()
+        keepAwakeController.onStatusChange = { @MainActor [weak self, weak state] status in
+            state?.updateKeepAwakeStatus(status)
+            self?.menuBarController?.setKeepAwakeActive(status.isActive)
+        }
+        let lowPowerModeService = LowPowerModeService(backend: MacEnergyModeBackend())
+        self.lowPowerModeService = lowPowerModeService
+        lowPowerModeService.onStatusChange = { [weak state] message in
+            state?.preferences.keepAwakeEnergyModeStatus = message
+        }
+        let refreshEnergyHelper: @MainActor () -> Void = { [weak state, weak lowPowerModeService] in
+            guard let state else { return }
+            state.preferences.energyHelperStatus = EnergyHelperSetup.statusMessage
+            lowPowerModeService?.setEnabled(
+                state.preferences.keepAwakeClosedLidEnabled && state.preferences.keepAwakeLowPowerWithClosedLid
+            )
+        }
+        state.preferences.onRefreshEnergyHelper = refreshEnergyHelper
+        state.preferences.onEnableEnergyHelper = { [weak state] in
+            do {
+                try EnergyHelperSetup.register()
+                refreshEnergyHelper()
+            } catch {
+                let failure = error as NSError
+                state?.preferences.energyHelperStatus = "Energy helper registration failed: \(failure.localizedDescription) (\(failure.domain), \(failure.code))."
+                NSLog("Energy helper registration failed: %@", failure)
+            }
+        }
+        state.preferences.onDisableEnergyHelper = { [weak state, weak lowPowerModeService] in
+            Task { @MainActor in
+                guard let state, let lowPowerModeService else { return }
+                guard await lowPowerModeService.restoreForQuit() else {
+                    state.preferences.energyHelperStatus = "Restore the saved energy modes before removing the helper."
+                    return
+                }
+                state.preferences.keepAwakeLowPowerWithClosedLid = false
+                do {
+                    try await EnergyHelperSetup.unregister()
+                    state.preferences.energyHelperStatus = EnergyHelperSetup.statusMessage
+                } catch {
+                    state.preferences.energyHelperStatus = "Could not remove the energy helper. Retry from Settings."
+                }
+            }
+        }
+        state.preferences.energyHelperStatus = EnergyHelperSetup.statusMessage
+        state.preferences.onKeepAwakeOptionsChange = { @MainActor [weak keepAwakeController, weak lowPowerModeService, weak state] options in
+            keepAwakeController?.updateOptions(options)
+            lowPowerModeService?.setEnabled(
+                options.closedLidRequested && (state?.preferences.keepAwakeLowPowerWithClosedLid ?? false)
+            )
+        }
+        lowPowerModeService.setEnabled(
+            state.preferences.keepAwakeClosedLidEnabled && state.preferences.keepAwakeLowPowerWithClosedLid
+        )
+        let startKeepAwake: @MainActor (KeepAwakeDuration) -> Void = { [weak keepAwakeController, weak state] duration in
+            guard let state else { return }
+            keepAwakeController?.start(duration, options: state.preferences.keepAwakeOptions)
+        }
+        let stopKeepAwake: @MainActor () -> Void = { [weak keepAwakeController] in
+            keepAwakeController?.stop()
+        }
+        self.keepAwakeController = keepAwakeController
+        installTerminationSignalHandler()
+
         let fileShelfService = FileShelfService()
         fileShelfService.onItemsChanged = { @MainActor [weak state] items in
             state?.updateFileShelfItems(items)
@@ -128,7 +205,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onFileShelfCopy: { @MainActor [weak fileShelfService] item in
                 fileShelfService?.copyToPasteboard(item) ?? false
-            }
+            },
+            keepAwakeActions: KeepAwakeControlActions(
+                start: startKeepAwake,
+                chooseEndTime: { @MainActor [weak self] in
+                    self?.menuBarController?.presentUntilTimePicker()
+                },
+                stop: stopKeepAwake
+            )
         )
         captureActivityService.onActivityUpdate = { @MainActor [weak state, weak controller] activity in
             state?.updateCaptureActivity(activity)
@@ -152,6 +236,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // status item that can reopen Settings and re-enable it.
         menuBarController = MenuBarController(
             preferences: state.preferences,
+            keepAwakeStatus: { @MainActor [weak keepAwakeController] in
+                keepAwakeController?.status ?? .inactive
+            },
+            onKeepAwakeStart: startKeepAwake,
+            onKeepAwakeStop: stopKeepAwake,
             onOpenOrExpandNotch: { @MainActor [weak controller] in
                 controller?.openOrExpandFromMenu()
             },
@@ -162,9 +251,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         )
+        // Explicit setup invoked by the user's script; ordinary launches never
+        // register a privileged service or add a background item.
+        if ProcessInfo.processInfo.arguments.contains("--register-energy-helper") {
+            state.preferences.onEnableEnergyHelper?()
+            showSettings()
+            NSLog("Energy helper setup: %@", state.preferences.energyHelperStatus)
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Restart restores first, before the replacement owns energy policy.
+        if isRestarting { return .terminateNow }
+        guard let lowPowerModeService, lowPowerModeService.needsRestoration else { return .terminateNow }
+        Task { @MainActor in
+            let restored = await lowPowerModeService.restoreForQuit()
+            if !restored {
+                let alert = NSAlert()
+                alert.messageText = "Previous energy modes could not be restored"
+                alert.informativeText = "Quit anyway and restore them from Battery settings, or cancel to retry. Dynamic Notch has kept the saved modes for recovery on its next launch."
+                alert.addButton(withTitle: "Cancel Quit")
+                alert.addButton(withTitle: "Quit Anyway")
+                NSApp.reply(toApplicationShouldTerminate: alert.runModal() == .alertSecondButtonReturn)
+            } else {
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        lowPowerModeService?.onStatusChange = nil
+        lowPowerModeService = nil
+        // Release assertions and restore lid-close sleep before anything else.
+        keepAwakeController?.stop()
+        keepAwakeController?.onStatusChange = nil
+        keepAwakeController = nil
+        appState?.preferences.onKeepAwakeOptionsChange = nil
+        appState?.preferences.onEnableEnergyHelper = nil
+        appState?.preferences.onDisableEnergyHelper = nil
+        appState?.preferences.onRefreshEnergyHelper = nil
+        terminationSignalSource?.cancel()
+        terminationSignalSource = nil
         systemStatsService?.stop()
         systemStatsService = nil
         fileShelfService?.stop()
@@ -188,6 +316,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// `kill` sends SIGTERM, which otherwise exits without
+    /// `applicationWillTerminate`. Route it through normal termination so a
+    /// closed-lid override is restored. A dispatch signal source adds no
+    /// wakeups while idle.
+    private func installTerminationSignalHandler() {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler {
+            // AppKit may enter a nested run loop while awaiting an async
+            // termination reply. Leave the dispatch callback first so that
+            // MainActor restoration tasks can run in that loop.
+            RunLoop.main.perform(inModes: [.default, .eventTracking, .modalPanel]) {
+                MainActor.assumeIsolated {
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+        source.resume()
+        terminationSignalSource = source
     }
 
     private func showSettings() {
@@ -218,6 +367,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isRestarting = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let lowPowerModeService, !(await lowPowerModeService.restoreForQuit()) {
+                isRestarting = false
+                presentRestartFailure("Previous energy modes could not be restored. Retry the energy-mode setting before restarting.")
+                return
+            }
+            launchReplacement(at: bundleURL)
+        }
+    }
+
+    private func launchReplacement(at bundleURL: URL) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         configuration.addsToRecentItems = false
@@ -228,6 +389,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if let errorMessage {
                 self.isRestarting = false
+                if let preferences = self.appState?.preferences {
+                    self.lowPowerModeService?.setEnabled(
+                        preferences.keepAwakeClosedLidEnabled && preferences.keepAwakeLowPowerWithClosedLid
+                    )
+                }
                 self.presentRestartFailure(errorMessage)
                 return
             }

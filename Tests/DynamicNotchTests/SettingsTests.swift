@@ -114,18 +114,18 @@ func motionPreferenceFollowsSystemOrExplicitOverride() {
 func expandedPagesRemainBoundedByEnabledLocalFeatures() {
     #expect(
         NotchExpandedPage.available(systemStatsEnabled: true, fileShelfEnabled: true)
-            == [.media, .system, .files]
+            == [.media, .system, .files, .keepAwake, .mirror]
     )
     #expect(
         NotchExpandedPage.available(systemStatsEnabled: false, fileShelfEnabled: true)
-            == [.media, .files]
+            == [.media, .files, .keepAwake, .mirror]
     )
     #expect(
         NotchExpandedPage.available(systemStatsEnabled: true, fileShelfEnabled: false)
-            == [.media, .system]
+            == [.media, .system, .keepAwake, .mirror]
     )
     #expect(
         NotchExpandedPage.available(systemStatsEnabled: false, fileShelfEnabled: false)
-            == [.media]
+            == [.media, .keepAwake, .mirror]
     )
 }

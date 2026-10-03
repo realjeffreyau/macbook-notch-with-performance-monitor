@@ -44,6 +44,49 @@ struct NotchSettingsView: View {
                 .disabled(!preferences.fileShelfEnabled)
             }
 
+            Section("Keep Awake") {
+                Picker("Default duration", selection: $preferences.keepAwakeDurationPreset) {
+                    ForEach(KeepAwakeDurationPreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                Toggle("Keep display awake", isOn: $preferences.keepAwakeKeepsDisplayAwake)
+                Picker("Stop when battery reaches", selection: $preferences.keepAwakeLowBatteryThreshold) {
+                    ForEach(NotchPreferences.keepAwakeLowBatteryThresholds, id: \.self) { value in
+                        Text(value == 0 ? "Never" : "\(value)%").tag(value)
+                    }
+                }
+                Text("By default your Mac stays awake while the display can still sleep. Start and stop from the menu bar or the Keep Awake page in the notch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Closed lid") {
+                Toggle("Stay awake with the lid closed", isOn: $preferences.keepAwakeClosedLidEnabled)
+                Toggle("Use Low Power Mode with closed-lid mode", isOn: $preferences.keepAwakeLowPowerWithClosedLid)
+                Text("Applies while the closed-lid switch is on. Restores your previous battery and power-adapter modes when it is off or the app quits. Approve the energy helper once; later changes need no password. Code and LLM jobs may run more slowly.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(preferences.keepAwakeEnergyModeStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Enable energy helper…") { preferences.onEnableEnergyHelper?() }
+                    Button("Remove energy helper") { preferences.onDisableEnergyHelper?() }
+                }
+                Text(preferences.energyHelperStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Allow on battery", isOn: $preferences.keepAwakeClosedLidAllowsBattery)
+                    .disabled(!preferences.keepAwakeClosedLidEnabled)
+                Text("Off by default. A closed MacBook uses more battery and can get warm, so this works only on a power adapter unless you allow battery. Manual Sleep and low-battery sleep still work.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Uses an undocumented macOS setting that resets on restart. If Dynamic Notch quits unexpectedly, closing the lid may not sleep until you reopen the app or restart.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Diagnostics") {
                 Toggle(
                     "Show resource diagnostics",
@@ -78,6 +121,7 @@ struct NotchSettingsView: View {
         .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Dynamic Notch settings")
+        .onAppear { preferences.onRefreshEnergyHelper?() }
     }
 }
 
@@ -97,7 +141,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         )
         let hostingView = NSHostingView(rootView: contentView)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 430, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false

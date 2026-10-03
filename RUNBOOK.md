@@ -85,6 +85,23 @@ The menu-bar item remains available for opening the notch, opening Settings,
 enabling or disabling the notch, and quitting. It is also the recovery path
 when the notch is disabled.
 
+## Keep Awake and Mirror
+
+Keep Awake is available from the notch page and menu bar. Choose a preset or an
+end time; display-sleep prevention and the low-battery stop threshold are
+optional. A session ends when its timer expires, it is stopped, or a configured
+safety condition is reached.
+
+Closed-lid support is optional and may vary by Mac and macOS version. It is off
+by default and uses AC power unless battery use is explicitly enabled. The
+helper-backed energy-mode option requires an Apple-signed build and macOS
+approval; it is not available in the ad-hoc demo download. Previous power modes
+are restored when possible, with recovery data retained if restoration fails.
+
+The Mirror page asks for camera access when opened and stops the preview when
+you leave the page or close the notch. It uses video only and does not save
+photos or video.
+
 ## Resource check
 
 The collapsed notch is designed to remain idle without a polling timer, display

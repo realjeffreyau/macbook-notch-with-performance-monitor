@@ -5,6 +5,9 @@ struct ExpandedPagePicker: View {
     let pages: [NotchExpandedPage]
     let onSettings: () -> Void
     let onSelect: (NotchExpandedPage) -> Void
+    /// Fills the Keep Awake page icon while a session runs, so the state is
+    /// visible from every page without changing any page's layout.
+    var keepAwakeIsActive = false
 
     var body: some View {
         HStack(spacing: 3) {
@@ -46,6 +49,8 @@ struct ExpandedPagePicker: View {
         case .media: "music.note"
         case .system: "gauge.with.dots.needle.33percent"
         case .files: "folder"
+        case .keepAwake: keepAwakeIsActive ? "cup.and.saucer.fill" : "cup.and.saucer"
+        case .mirror: "camera"
         }
     }
 
@@ -54,6 +59,8 @@ struct ExpandedPagePicker: View {
         case .media: "Media"
         case .system: "System statistics"
         case .files: "Files"
+        case .keepAwake: keepAwakeIsActive ? "Keep Awake, on" : "Keep Awake"
+        case .mirror: "Mirror camera"
         }
     }
 }

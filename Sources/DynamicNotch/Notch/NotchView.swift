@@ -35,14 +35,28 @@ enum NotchDesignTokens {
     static let expandedContentVerticalOffset: CGFloat = -4
     static let animationDuration: TimeInterval = 0.30
     static let reducedMotionAnimationDuration: TimeInterval = 0.16
-    // The panel is already shrinking toward the physical notch. Keep the
-    // content scale contribution subtle so the two animations read as one
-    // continuous movement instead of two competing contractions.
+    // Keep the content scale contribution subtle so the page and panel read
+    // as one continuous movement during expansion and click-away collapse.
     static let expandedTransitionScale: CGFloat = 0.985
     static let reducedMotionTransitionScale: CGFloat = 0.995
 
     static func expandedHandleTopPadding(for notchHeight: CGFloat) -> CGFloat {
         max(12, notchHeight + 8)
+    }
+
+    static func expandedPageAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: reducedMotionAnimationDuration)
+            : .spring(response: animationDuration, dampingFraction: 0.88)
+    }
+
+    static func expandedPageTransition(reduceMotion: Bool) -> AnyTransition {
+        .opacity.combined(
+            with: .scale(
+                scale: reduceMotion ? reducedMotionTransitionScale : 0.97,
+                anchor: .center
+            )
+        )
     }
 }
 
@@ -208,6 +222,7 @@ struct NotchView: View {
     let onFileShelfCopy: (FileShelfItem) -> Bool
     let onFileShelfRemove: (UUID) -> Void
     let onFileShelfClear: () -> Void
+    var keepAwakeActions = KeepAwakeControlActions()
 
     var body: some View {
         Group {
@@ -240,6 +255,7 @@ struct NotchView: View {
 
                         ExpandedNotchView(
                             session: state.mediaSession,
+                            reduceMotion: state.reduceMotion,
                             surfaceWidth: NotchDesignTokens.expandedSurfaceWidth(
                                 for: state.geometry?.notchRect.width ?? 0
                             ),
@@ -256,7 +272,9 @@ struct NotchView: View {
                             onFileShelfQuickLook: onFileShelfQuickLook,
                             onFileShelfCopy: onFileShelfCopy,
                             onFileShelfRemove: onFileShelfRemove,
-                            onFileShelfClear: onFileShelfClear
+                            onFileShelfClear: onFileShelfClear,
+                            keepAwakeStatus: state.keepAwakeStatus,
+                            keepAwakeActions: keepAwakeActions
                         )
                         .frame(
                             width: NotchDesignTokens.expandedSurfaceWidth(
@@ -280,7 +298,8 @@ struct NotchView: View {
                                 fileShelfEnabled: preferences.fileShelfEnabled
                             ),
                             onSettings: onOpenSettings,
-                            onSelect: onExpandedPageChange
+                            onSelect: onExpandedPageChange,
+                            keepAwakeIsActive: state.keepAwakeStatus.isActive
                         )
                     }
                     .frame(
@@ -473,6 +492,7 @@ private struct ExpandedNotchHeader: View {
     let pages: [NotchExpandedPage]
     let onSettings: () -> Void
     let onSelect: (NotchExpandedPage) -> Void
+    let keepAwakeIsActive: Bool
 
     private var contentWidth: CGFloat {
         NotchDesignTokens.expandedContentWidth(for: surfaceWidth)
@@ -492,7 +512,8 @@ private struct ExpandedNotchHeader: View {
                 selection: selection,
                 pages: pages,
                 onSettings: onSettings,
-                onSelect: onSelect
+                onSelect: onSelect,
+                keepAwakeIsActive: keepAwakeIsActive
             )
             .frame(width: contentWidth, alignment: .center)
             .padding(.top, 8)
@@ -503,6 +524,7 @@ private struct ExpandedNotchHeader: View {
 
 private struct ExpandedNotchView: View {
     let session: MediaSession?
+    let reduceMotion: Bool
     let surfaceWidth: CGFloat
     let notchHeight: CGFloat
     let captureActivity: CaptureActivity
@@ -518,6 +540,8 @@ private struct ExpandedNotchView: View {
     let onFileShelfCopy: (FileShelfItem) -> Bool
     let onFileShelfRemove: (UUID) -> Void
     let onFileShelfClear: () -> Void
+    let keepAwakeStatus: KeepAwakeStatus
+    let keepAwakeActions: KeepAwakeControlActions
 
     private var contentWidth: CGFloat {
         NotchDesignTokens.expandedContentWidth(for: surfaceWidth)
@@ -544,32 +568,32 @@ private struct ExpandedNotchView: View {
             Group {
                 switch expandedPage {
                 case .media:
-                    if let session {
-                        // Progress is refreshed only while the expanded media
-                        // card is visible. The collapsed notch never owns a
-                        // progress timer.
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            ExpandedMediaContent(
-                                session: session,
-                                model: NotchMediaViewModel(session: session, at: context.date)
-                                    .map { $0 },
-                                showArtwork: preferences.showArtwork,
-                                showOutputDevice: preferences.showOutputDevice,
-                                onMediaCommand: onMediaCommand
-                            )
-                            .id(session.id)
+                    Group {
+                        if let session {
+                            // Progress is refreshed only while the expanded
+                            // media card is visible. The collapsed notch never
+                            // owns a progress timer.
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                ExpandedMediaContent(
+                                    session: session,
+                                    model: NotchMediaViewModel(session: session, at: context.date),
+                                    showArtwork: preferences.showArtwork,
+                                    showOutputDevice: preferences.showOutputDevice,
+                                    onMediaCommand: onMediaCommand
+                                )
+                                .id(session.id)
+                            }
+                            .frame(width: contentWidth, alignment: .topLeading)
+                            .frame(maxHeight: .infinity, alignment: .topLeading)
+                            .clipped()
+                        } else {
+                            ExpandedNoMediaContent()
                         }
-                        // Keep the timeline page on the same fixed canvas as
-                        // Files and System; its intrinsic content must not
-                        // change the visible card bounds.
-                        .frame(width: contentWidth, alignment: .topLeading)
-                        .frame(maxHeight: .infinity, alignment: .topLeading)
-                        .clipped()
-                    } else {
-                        ExpandedNoMediaContent()
                     }
+                    .transition(NotchDesignTokens.expandedPageTransition(reduceMotion: reduceMotion))
                 case .system:
                     SystemStatsPageView(snapshot: systemStats)
+                        .transition(NotchDesignTokens.expandedPageTransition(reduceMotion: reduceMotion))
                 case .files:
                     FileShelfPageView(
                         items: fileShelfItems,
@@ -579,8 +603,23 @@ private struct ExpandedNotchView: View {
                         onRemove: onFileShelfRemove,
                         onClear: onFileShelfClear
                     )
+                    .transition(NotchDesignTokens.expandedPageTransition(reduceMotion: reduceMotion))
+                case .keepAwake:
+                    KeepAwakePageView(
+                        status: keepAwakeStatus,
+                        preferences: preferences,
+                        actions: keepAwakeActions
+                    )
+                    .transition(NotchDesignTokens.expandedPageTransition(reduceMotion: reduceMotion))
+                case .mirror:
+                    MirrorCameraPage()
+                        .transition(NotchDesignTokens.expandedPageTransition(reduceMotion: reduceMotion))
                 }
             }
+            .animation(
+                NotchDesignTokens.expandedPageAnimation(reduceMotion: reduceMotion),
+                value: expandedPage
+            )
             .frame(width: contentWidth, alignment: .topLeading)
             .frame(maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, NotchDesignTokens.expandedPageContentTopPadding)

@@ -20,6 +20,8 @@
 	<string>0.1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Dynamic Notch uses the camera only while the Mirror tab is open to show a live mirrored preview. It does not capture audio or save photos or video.</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>

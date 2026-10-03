@@ -13,6 +13,7 @@ final class NotchWindowController {
     private let onSystemStatsVisibilityChanged: @MainActor (Bool) -> Void
     private let onOpenSettings: @MainActor () -> Void
     private let onFileShelfCopy: @MainActor (FileShelfItem) -> Bool
+    private let keepAwakeActions: KeepAwakeControlActions
     private let fileShelfService: FileShelfService
     private var hostingView: NSHostingView<NotchView>?
     private var presentationBeforeDrop: NotchPresentationState?
@@ -29,7 +30,8 @@ final class NotchWindowController {
         onSystemStatsVisibilityChanged: @escaping @MainActor (Bool) -> Void = { _ in },
         fileShelfService: FileShelfService,
         onOpenSettings: @escaping @MainActor () -> Void = {},
-        onFileShelfCopy: @escaping @MainActor (FileShelfItem) -> Bool = { _ in false }
+        onFileShelfCopy: @escaping @MainActor (FileShelfItem) -> Bool = { _ in false },
+        keepAwakeActions: KeepAwakeControlActions = KeepAwakeControlActions()
     ) {
         self.state = state
         preferences = state.preferences
@@ -38,6 +40,7 @@ final class NotchWindowController {
         self.onSystemStatsVisibilityChanged = onSystemStatsVisibilityChanged
         self.onOpenSettings = onOpenSettings
         self.onFileShelfCopy = onFileShelfCopy
+        self.keepAwakeActions = keepAwakeActions
         self.fileShelfService = fileShelfService
     }
 
@@ -74,7 +77,8 @@ final class NotchWindowController {
             },
             onFileShelfClear: { [weak self] in
                 self?.fileShelfService.clear()
-            }
+            },
+            keepAwakeActions: keepAwakeActions
         )
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.wantsLayer = true

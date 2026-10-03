@@ -8,10 +8,19 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
+        .executable(name: "DynamicNotchEnergyHelper", targets: ["DynamicNotchEnergyHelper"]),
         .executable(name: "DynamicNotch", targets: ["DynamicNotch"]),
         .executable(name: "DynamicNotchMediaDiagnostic", targets: ["DynamicNotchMediaDiagnostic"])
     ],
     targets: [
+        .target(name: "EnergyHelperProtocol", path: "Sources/EnergyHelperProtocol"),
+        .executableTarget(name: "DynamicNotchEnergyHelper", dependencies: ["EnergyHelperProtocol"], path: "Sources/DynamicNotchEnergyHelper"),
+        .target(
+            name: "PowerNotificationBridge",
+            path: "Sources/PowerNotificationBridge",
+            publicHeadersPath: "include",
+            cSettings: [.unsafeFlags(["-fblocks"])]
+        ),
         .target(
             name: "MediaRemoteBridge",
             path: "Sources/MediaRemoteBridge",
@@ -29,7 +38,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "DynamicNotch",
-            dependencies: ["DynamicNotchMedia"],
+            dependencies: ["DynamicNotchMedia", "PowerNotificationBridge", "EnergyHelperProtocol"],
             path: "Sources/DynamicNotch"
         ),
         .executableTarget(
@@ -39,7 +48,7 @@ let package = Package(
         ),
         .testTarget(
             name: "DynamicNotchTests",
-            dependencies: ["DynamicNotch", "DynamicNotchMedia"],
+            dependencies: ["DynamicNotch", "DynamicNotchMedia", "EnergyHelperProtocol"],
             path: "Tests/DynamicNotchTests"
         ),
         .testTarget(

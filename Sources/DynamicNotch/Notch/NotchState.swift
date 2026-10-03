@@ -13,6 +13,8 @@ enum NotchExpandedPage: CaseIterable, Hashable, Sendable {
     case media
     case system
     case files
+    case keepAwake
+    case mirror
 
     static func available(
         systemStatsEnabled: Bool,
@@ -25,6 +27,8 @@ enum NotchExpandedPage: CaseIterable, Hashable, Sendable {
         if fileShelfEnabled {
             pages.append(.files)
         }
+        pages.append(.keepAwake)
+        pages.append(.mirror)
         return pages
     }
 }

@@ -13,6 +13,17 @@ The archive contains `DynamicNotch.app`. Extract it and open the app. This
 demo build is ad-hoc signed rather than notarized, so macOS may require
 **Control-click → Open** on first launch.
 
+## Latest updates
+
+- Timed Keep Awake sessions are available from the notch and menu bar, with
+  optional display-sleep and low-battery controls.
+- Optional closed-lid Keep Awake is off by default and AC-only unless battery
+  use is enabled. Support varies by Mac and macOS version; helper-backed power
+  changes require a developer-signed app and explicit macOS approval.
+- The Mirror page shows a live camera preview only while open. It does not use
+  the microphone or save media.
+- Click-away collapse now uses a coordinated, shorter ease-out resize.
+
 ## Features
 
 - Notch-aware AppKit window with SwiftUI content and display-change handling.
@@ -32,6 +43,9 @@ demo build is ad-hoc signed rather than notarized, so macOS may require
   album artwork without changing the window dimensions.
 - Native Settings and menu-bar recovery controls, including **Refresh & restart
   app** and an opt-in startup preference that is off by default.
+- Timed Keep Awake controls from the notch and menu bar, with optional display
+  sleep prevention and low-battery safeguards.
+- An optional Mirror page with a live, video-only camera preview while visible.
 - Reduced-motion support and no third-party runtime dependencies.
 
 ## Build from source
@@ -60,7 +74,8 @@ cloud service. File Shelf stores bounded URL metadata and security-scoped
 bookmarks when available; it does not copy, delete, or upload file contents.
 Screenshot thumbnails are bounded, and the full image is read only after an
 explicit copy action. Privacy indicators observe device-use state without
-opening a camera, microphone, or capture session.
+opening a capture session. The optional Mirror page requests camera access for
+its live preview only while open; it does not capture audio or save media.
 
 The collapsed surface is event-driven: it has no polling timer, display link,
 or continuous animation driver. Media progress refreshes only while expanded,
@@ -77,10 +92,12 @@ integrations are not App Store compatibility guarantees.
 ```text
 Sources/DynamicNotch/                 AppKit shell and SwiftUI surfaces
 Sources/DynamicNotchMedia/            Media providers and session model
+Sources/DynamicNotchEnergyHelper/     Optional power-settings helper
 Sources/MediaRemoteBridge/            Isolated Objective-C media bridge
+Sources/PowerNotificationBridge/      Power-state event bridge
 Sources/DynamicNotchMediaDiagnostic/  Read-only diagnostic executable
 Tests/                                Unit and lifecycle tests
-Packaging/                            Application-bundle template
+Packaging/                            Application-bundle templates
 RUNBOOK.md                            Build and validation guide
 ```
 
@@ -89,5 +106,5 @@ RUNBOOK.md                            Build and validation guide
 The automated suite does not replace hardware checks. Use the
 [runbook](RUNBOOK.md) to validate notch geometry, media behavior, screenshot
 discovery and copy, screenshot-overlay behavior, privacy indicators, File Shelf
-actions, Settings persistence and recovery, the shared expanded canvas, reduced
-motion, and menu-bar recovery.
+actions, Keep Awake, Mirror, Settings persistence and recovery, reduced motion,
+and menu-bar recovery.

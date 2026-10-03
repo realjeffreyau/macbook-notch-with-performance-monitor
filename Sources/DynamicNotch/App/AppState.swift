@@ -16,6 +16,8 @@ final class AppState {
     private(set) var systemStats: SystemStatsSnapshot?
     private(set) var fileShelfItems: [FileShelfItem] = []
     private(set) var fileShelfDropState: FileShelfDropState = .inactive
+    /// Changes only on session events; never ticks with remaining time.
+    private(set) var keepAwakeStatus = KeepAwakeStatus.inactive
 
     init(preferences: NotchPreferences = NotchPreferences()) {
         self.preferences = preferences
@@ -57,6 +59,10 @@ final class AppState {
 
     func updateFileShelfDropState(_ state: FileShelfDropState) {
         fileShelfDropState = state
+    }
+
+    func updateKeepAwakeStatus(_ status: KeepAwakeStatus) {
+        keepAwakeStatus = status
     }
 
     func togglePresentation() {

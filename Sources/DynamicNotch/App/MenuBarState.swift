@@ -49,3 +49,38 @@ struct MenuBarMenuModel: Equatable, Sendable {
         action == .toggleNotch ? !currentValue : currentValue
     }
 }
+
+/// The Keep Awake part of the status-item menu. Built when the menu opens,
+/// so it shows a static end time and never runs a countdown.
+struct KeepAwakeMenuModel: Equatable, Sendable {
+    let statusTitle: String
+    let detailLines: [String]
+    let isActive: Bool
+    let toggleTitle: String
+    /// The running preset, checkmarked like the notch page highlights it.
+    let selectedPreset: KeepAwakeDurationPreset?
+    let isUntilTimeSelected: Bool
+
+    static func make(
+        status: KeepAwakeStatus,
+        defaultPreset: KeepAwakeDurationPreset,
+        now: Date,
+        presentation: KeepAwakePresentation = KeepAwakePresentation()
+    ) -> Self {
+        Self(
+            statusTitle: presentation.statusTitle(for: status, now: now),
+            detailLines: presentation.detailLines(for: status),
+            isActive: status.isActive,
+            toggleTitle: status.isActive
+                ? "Stop Keep Awake"
+                : "Start Keep Awake (\(defaultPreset.title))",
+            selectedPreset: KeepAwakeDurationPreset.allCases.first {
+                $0.duration == status.session?.duration
+            },
+            isUntilTimeSelected: {
+                if case .until = status.session?.duration { return true }
+                return false
+            }()
+        )
+    }
+}
