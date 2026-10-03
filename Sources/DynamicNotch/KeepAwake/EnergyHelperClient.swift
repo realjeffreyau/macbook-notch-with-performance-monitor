@@ -25,8 +25,11 @@ enum EnergyHelperSetup {
         if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
     }
 
-    static func unregister() async throws {
-        if service.status != .notRegistered { try await service.unregister() }
+    nonisolated static func unregister() async throws {
+        // Create the value in this nonisolated async method so it does not cross
+        // the main-actor boundary when ServiceManagement unregisters it.
+        let helperService = SMAppService.daemon(plistName: EnergyHelperIdentity.plist)
+        if helperService.status != .notRegistered { try await helperService.unregister() }
     }
 }
 
