@@ -7,7 +7,7 @@ surface for media, system status, privacy indicators, and a local File Shelf.
 
 ## Download
 
-[Download Dynamic Notch for macOS](https://github.com/realjeffreyau/macbook-notch-with-performance-monitor/raw/refs/heads/main/downloads/DynamicNotch-macOS.app.zip)
+[Download Dynamic Notch for macOS](https://raw.githubusercontent.com/realjeffreyau/macbook-notch-with-performance-monitor/2bfbd2ff65fd7ecd1d1c79c245dc7dc36a94cf93/downloads/DynamicNotch-macOS.app.zip)
 
 The archive contains `DynamicNotch.app`. Extract it and open the app. This
 demo build is ad-hoc signed rather than notarized, so macOS may require
