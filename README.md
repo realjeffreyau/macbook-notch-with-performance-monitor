@@ -22,7 +22,6 @@ demo build is ad-hoc signed rather than notarized, so macOS may require
   changes require a developer-signed app and explicit macOS approval.
 - The Mirror page shows a live camera preview only while open. It does not use
   the microphone or save media.
-- Click-away collapse now uses a coordinated, shorter ease-out resize.
 
 ## Features
 
@@ -69,7 +68,7 @@ runs the raw executable and is intended for local development.
 
 ## Privacy and resource behavior
 
-Dynamic Notch is local-first. The core utility does not upload files or use a
+Dynamic Notch is local first. The core utility does not upload files or use a
 cloud service. File Shelf stores bounded URL metadata and security-scoped
 bookmarks when available; it does not copy, delete, or upload file contents.
 Screenshot thumbnails are bounded, and the full image is read only after an
