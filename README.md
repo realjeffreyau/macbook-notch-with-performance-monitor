@@ -2,8 +2,12 @@
 
 [![CI](https://github.com/realjeffreyau/macbook-notch-with-performance-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/realjeffreyau/macbook-notch-with-performance-monitor/actions/workflows/ci.yml)
 
-A native macOS utility that turns the camera notch into a compact, expandable
-surface for media, system status, privacy indicators, and a local File Shelf.
+A native macOS utility with an expandable notch panel for media, local files,
+system status, and Keep Awake.
+
+![Dynamic Notch media view with example artwork, playback progress and controls](docs/images/overview.png)
+
+*Native app views rendered with example media and file names.*
 
 ## Download
 
@@ -25,27 +29,16 @@ demo build is ad-hoc signed rather than notarized, so macOS may require
 
 ## Features
 
-- Notch-aware AppKit window with SwiftUI content and display-change handling.
-- Media surface with inferred progress and capability-gated controls.
-- Optional local Spotify metadata support through explicit Apple Events access.
-- CPU, memory, battery, output-device, and bounded energy-use information.
-- Camera and microphone activity indicators without opening capture sessions.
-- File Shelf for local file references, Quick Look, Finder reveal, URL-only
-  drag-out, and bounded persistence.
-- Automatic detection of standard macOS screenshots in the configured
-  screenshot folder, with small thumbnails and an explicit copy-to-pasteboard
-  action for pasting the image into another app.
-- Screenshot-safe click-away handling keeps the notch open during Cmd-Shift-4
-  selection and restores it after a transient collapse; file watching remains
-  event-driven and crash-safe.
-- Fixed expanded canvas shared across Media, Files, and System, with larger
-  album artwork without changing the window dimensions.
-- Native Settings and menu-bar recovery controls, including **Refresh & restart
-  app** and an opt-in startup preference that is off by default.
-- Timed Keep Awake controls from the notch and menu bar, with optional display
-  sleep prevention and low-battery safeguards.
-- An optional Mirror page with a live, video-only camera preview while visible.
-- Reduced-motion support and no third-party runtime dependencies.
+- Media metadata, artwork, playback progress, and supported controls.
+- A local File Shelf with drag and drop, Quick Look, and Finder reveal.
+- Screenshot detection and an explicit copy action for pasting into another app.
+- CPU, memory, battery, output-device information, and an energy-use estimate.
+- Timed Keep Awake from the notch and menu bar, with display-sleep and
+  low-battery options.
+- Camera and microphone activity indicators, plus an optional live Mirror page.
+- Native Settings, menu-bar recovery, reduced motion, and opt-in start at login.
+
+![Native File Shelf and Keep Awake views showing example files, session presets and optional controls](docs/images/features.png)
 
 ## Build from source
 
